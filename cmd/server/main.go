@@ -10,7 +10,7 @@ import (
 	"github.com/Dharshan2208/code-compiler/internal/workspace"
 )
 
-func runPythonHandler(w http.ResponseWriter, r *http.Request) {
+func runHandler(w http.ResponseWriter, r *http.Request) {
 	var req models.RunRequest
 
 	err := json.NewDecoder(r.Body).Decode(&req)
@@ -27,18 +27,38 @@ func runPythonHandler(w http.ResponseWriter, r *http.Request) {
 
 	defer workspace.Cleanup(dir)
 
-	file, err := workspace.WriteFile(dir, "main.py", req.Code)
+	var (
+		filename string
+		execLang executor.Executor
+	)
+
+	switch req.Language {
+	case "python":
+		filename = "main.py"
+		execLang = executor.PythonExecutor{}
+
+	case "cpp":
+		filename = "main.cpp"
+		execLang = executor.CppExecutor{}
+
+	default:
+		http.Error(w, "unsupported language", 400)
+		return
+	}
+
+	file, err := workspace.WriteFile(dir, filename, req.Code)
 	if err != nil {
 		http.Error(w, "file error", 500)
 		return
 	}
 
-	result := executor.RunPython(file)
+	result := execLang.Execute(file)
 
 	resp := models.RunResponse{
-		Stdout: result.Stdout,
-		Stderr: result.Stderr,
-		Status: result.Status,
+		Stdout:   result.Stdout,
+		Stderr:   result.Stderr,
+		Status:   result.Status,
+		Language: req.Language,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -47,7 +67,7 @@ func runPythonHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	http.HandleFunc("/run/python", runPythonHandler)
+	http.HandleFunc("/run", runHandler)
 
 	log.Println("server running on :8080")
 	log.Fatal(http.ListenAndServe(":8080", nil))
