@@ -1,48 +1,41 @@
 package executor
 
 import (
-	"bytes"
-	"context"
-	"os/exec"
-	"time"
+	"github.com/Dharshan2208/code-compiler/internal/sandbox"
 )
 
 type PythonExecutor struct{}
 
-func (p PythonExecutor) Execute(file string) Result {
-	// Creating a 5 second timer
-	ctx, cancel := context.WithTimeout(
-		context.Background(),
-		5*time.Second,
+func (p PythonExecutor) Execute(file string, workspace string) Result {
+	sb := sandbox.Sandbox{}
+
+	res := sb.Run(
+		"compiler-python",
+		workspace,
+		[]string{
+			"python3",
+			"main.py",
+		},
 	)
-	defer cancel()
 
-	// Running the command
-	cmd := exec.CommandContext(ctx, "python3", file)
+	if res.Error != nil {
+		if res.Stderr == "execution timeout" {
+			return Result{
+				Stderr: res.Stderr,
+				Status: "timeout",
+			}
+		}
 
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	err := cmd.Run()
-
-	if ctx.Err() == context.DeadlineExceeded {
-		return Result{Status: "timeout"}
-	}
-
-	if err != nil {
 		return Result{
-			Stdout: stdout.String(),
-			Stderr: stderr.String(),
-			Status: "error",
+			Stdout: res.Stdout,
+			Stderr: res.Stderr,
+			Status: "runtime_error",
 		}
 	}
 
 	return Result{
-		Stdout: stdout.String(),
-		Stderr: stderr.String(),
+		Stdout: res.Stdout,
+		Stderr: res.Stderr,
 		Status: "success",
 	}
 }

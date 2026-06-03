@@ -70,7 +70,7 @@ func (w *Worker) Process(job *models.Job) {
 		return
 	}
 
-	result := execLang.Execute(file)
+	result := execLang.Execute(file, dir)
 
 	job.Result = models.RunResponse{
 		Stdout:   result.Stdout,

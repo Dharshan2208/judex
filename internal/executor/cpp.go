@@ -1,66 +1,42 @@
 package executor
 
 import (
-	"bytes"
-	"context"
-	"os/exec"
-	"path/filepath"
-	"time"
+	"github.com/Dharshan2208/code-compiler/internal/sandbox"
 )
 
 type CppExecutor struct{}
 
-func (c CppExecutor) Execute(file string) Result {
-	ctx, cancel := context.WithTimeout(
-		context.Background(),
-		5*time.Second,
+func (c CppExecutor) Execute(file string, workspace string) Result {
+	sb := sandbox.Sandbox{}
+
+	res := sb.Run(
+		"compiler-cpp",
+		workspace,
+		[]string{
+			"bash",
+			"-c",
+			"g++ main.cpp -o app && ./app",
+		},
 	)
-	defer cancel()
 
-	binaryPath := filepath.Join(filepath.Dir(file), "app")
-
-	// Compilation step
-	compileCmd := exec.CommandContext(ctx, "g++", file, "-o", binaryPath)
-
-	var compileErr bytes.Buffer
-
-	compileCmd.Stderr = &compileErr
-
-	err := compileCmd.Run()
-	if err != nil {
-		return Result{
-			Stderr: compileErr.String(),
-			Status: "compile_error",
+	if res.Error != nil {
+		if res.Stderr == "execution timeout" {
+			return Result{
+				Stderr: res.Stderr,
+				Status: "timeout",
+			}
 		}
-	}
 
-	runCmd := exec.CommandContext(ctx, binaryPath)
-
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-
-	runCmd.Stdout = &stdout
-	runCmd.Stderr = &stderr
-
-	err = runCmd.Run()
-
-	if ctx.Err() == context.DeadlineExceeded {
 		return Result{
-			Status: "timeout",
-		}
-	}
-
-	if err != nil {
-		return Result{
-			Stdout: stdout.String(),
-			Stderr: stderr.String(),
-			Status: "runtime_error",
+			Stdout: res.Stdout,
+			Stderr: res.Stderr,
+			Status: "compile_or_runtime_error",
 		}
 	}
 
 	return Result{
-		Stdout: stdout.String(),
-		Stderr: stderr.String(),
+		Stdout: res.Stdout,
+		Stderr: res.Stderr,
 		Status: "success",
 	}
 }

@@ -7,5 +7,5 @@ type Result struct {
 }
 
 type Executor interface {
-	Execute(file string) Result
+	Execute(file string, workspace string) Result
 }
