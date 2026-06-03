@@ -6,7 +6,12 @@ import (
 )
 
 func CreateWorkspace() (string, error) {
-	return os.MkdirTemp("temp", "job-*")
+	dir, err := os.MkdirTemp("temp", "job-*")
+	if err != nil {
+		return "", err
+	}
+
+	return filepath.Abs(dir)
 }
 
 func WriteFile(dir string, filename string, content string) (string, error) {
