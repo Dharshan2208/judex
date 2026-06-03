@@ -91,10 +91,11 @@ func (w *Worker) Process(job *models.Job) {
 	result := execLang.Execute(file, dir)
 
 	job.Result = models.RunResponse{
-		Stdout:   result.Stdout,
-		Stderr:   result.Stderr,
-		Status:   result.Status,
-		Language: job.Language,
+		Stdout:        result.Stdout,
+		Stderr:        result.Stderr,
+		Status:        result.Status,
+		Language:      job.Language,
+		ExecutionTime: result.ExecutionTime,
 	}
 
 	if result.Status == "success" {

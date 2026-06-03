@@ -10,5 +10,6 @@ type RunResponse struct {
 	Stderr string `json:"stderr"`
 	Status string `json:"status"`
 
-	Language string `json:"language"`
+	Language      string `json:"language"`
+	ExecutionTime int64  `json:"execution_time_ms"`
 }

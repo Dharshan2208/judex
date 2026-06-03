@@ -1,9 +1,10 @@
 package executor
 
 type Result struct {
-	Stdout string
-	Stderr string
-	Status string
+	Stdout        string
+	Stderr        string
+	Status        string
+	ExecutionTime int64
 }
 
 type Executor interface {

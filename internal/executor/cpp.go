@@ -2,6 +2,7 @@ package executor
 
 import (
 	"log"
+	"time"
 
 	"github.com/Dharshan2208/code-compiler/internal/sandbox"
 )
@@ -11,8 +12,8 @@ type CppExecutor struct{}
 func (c CppExecutor) Execute(file string, workspace string) Result {
 	sb := sandbox.Sandbox{}
 
-	log.Printf("cpp compile started: file=%s workspace=%s", file, workspace)
-
+	// log.Printf("cpp compile started: file=%s workspace=%s", file, workspace)
+	start := time.Now()
 	compileResult := sb.Run(
 		"compiler-cpp",
 		workspace,
@@ -54,6 +55,7 @@ func (c CppExecutor) Execute(file string, workspace string) Result {
 		},
 	)
 
+	elapsed := time.Since(start)
 	if runResult.Error != nil {
 		if runResult.Stderr == "execution timeout" {
 			log.Printf("cpp run timed out: file=%s workspace=%s", file, workspace)
@@ -67,17 +69,19 @@ func (c CppExecutor) Execute(file string, workspace string) Result {
 		log.Printf("cpp run failed: file=%s workspace=%s stderr=%q", file, workspace, runResult.Stderr)
 
 		return Result{
-			Stdout: runResult.Stdout,
-			Stderr: runResult.Stderr,
-			Status: "runtime_error",
+			Stdout:        runResult.Stdout,
+			Stderr:        runResult.Stderr,
+			Status:        "runtime_error",
+			ExecutionTime: elapsed.Milliseconds(),
 		}
 	}
 
 	log.Printf("cpp run completed: file=%s workspace=%s", file, workspace)
 
 	return Result{
-		Stdout: runResult.Stdout,
-		Stderr: runResult.Stderr,
-		Status: "success",
+		Stdout:        runResult.Stdout,
+		Stderr:        runResult.Stderr,
+		Status:        "success",
+		ExecutionTime: elapsed.Milliseconds(),
 	}
 }
