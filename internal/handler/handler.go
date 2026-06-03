@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -26,10 +27,11 @@ func SubmitHandler(application *app.App) http.HandlerFunc {
 		jobID := uuid.New().String()
 
 		job := &models.Job{
-			ID:       jobID,
-			Language: req.Language,
-			Code:     req.Code,
-			Status:   "pending",
+			ID:        jobID,
+			Language:  req.Language,
+			Code:      req.Code,
+			Status:    "pending",
+			CreatedAt: time.Now(),
 		}
 
 		application.Store.Add(job)

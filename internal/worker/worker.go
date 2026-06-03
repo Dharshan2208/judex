@@ -2,6 +2,7 @@ package worker
 
 import (
 	"log"
+	"time"
 
 	"github.com/Dharshan2208/code-compiler/internal/executor"
 	"github.com/Dharshan2208/code-compiler/internal/models"
@@ -111,6 +112,7 @@ func (w *Worker) Process(job *models.Job) {
 		w.Stats.IncFailed()
 	}
 
+	job.CompletedAt = time.Now()
 	w.Store.Update(job)
 	log.Printf("Job finished: worker_id=%d job_id=%s status=%s language=%s", w.ID, job.ID, job.Status, job.Language)
 }

@@ -3,6 +3,7 @@ package queue
 import (
 	"log"
 	"sync"
+	"time"
 
 	"github.com/Dharshan2208/code-compiler/internal/models"
 )
@@ -48,4 +49,32 @@ func (s *Store) Update(job *models.Job) {
 
 	s.Jobs[job.ID] = job
 	log.Printf("store update: job_id=%s status=%s language=%s", job.ID, job.Status, job.Language)
+}
+
+func (s *Store) Delete(id string) {
+	s.Mu.Lock()
+	defer s.Mu.Unlock()
+
+	delete(s.Jobs, id)
+}
+
+func (s *Store) Cleanup(ttl time.Duration) int {
+	s.Mu.Lock()
+	defer s.Mu.Lock()
+
+	removed := 0
+	now := time.Now()
+
+	for id, job := range s.Jobs {
+		if job.CompletedAt.IsZero() {
+			continue
+		}
+
+		if now.Sub(job.CompletedAt) > ttl {
+			delete(s.Jobs, id)
+			removed++
+		}
+	}
+
+	return removed
 }
