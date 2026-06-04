@@ -25,13 +25,24 @@ func (s *Sandbox) Run(image string, workspace string, command []string) Result {
 	args := []string{
 		"run",
 		"--rm",
+
 		"--memory=256m",
 		"--cpus=1",
+		"--pids-limit=64",
+
 		"--network=none",
+
+		"--read-only",
+		"--tmpfs", "/tmp:size=64m",
+
+		"--security-opt=no-new-privileges",
+
 		"-v",
 		workspace + ":/workspace",
+
 		"-w",
 		"/workspace",
+
 		image,
 	}
 
