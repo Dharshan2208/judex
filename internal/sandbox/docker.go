@@ -36,6 +36,7 @@ func (s *Sandbox) Run(image string, workspace string, command []string) Result {
 		"--tmpfs", "/tmp:size=64m",
 
 		"--security-opt=no-new-privileges",
+		"--cap-drop=ALL",
 
 		"-v",
 		workspace + ":/workspace",

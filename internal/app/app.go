@@ -18,6 +18,18 @@ type App struct {
 }
 
 func New() *App {
+	return NewWorker()
+}
+
+func NewAPI() *App {
+	return newApp(0)
+}
+
+func NewWorker() *App {
+	return newApp(4)
+}
+
+func newApp(workerCount int) *App {
 	log.Println("Initializing application...")
 
 	redisClient := redisclient.New()
@@ -25,9 +37,12 @@ func New() *App {
 	s := store.NewRedisStore(redisClient)
 	stats := &queue.Stats{}
 
-	p := worker.NewPool(4, q, s, stats)
+	var p *worker.Pool
+	if workerCount > 0 {
+		p = worker.NewPool(workerCount, q, s, stats)
+	}
 
-	log.Println("Application initialized with queue_size=100 worker_count=4")
+	log.Printf("Application initialized with queue_size=100 worker_count=%d", workerCount)
 
 	return &App{
 		Queue: q,
