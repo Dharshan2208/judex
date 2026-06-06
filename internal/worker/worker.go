@@ -31,8 +31,10 @@ func (w *Worker) Start() {
 	log.Printf("Worker started: id=%d", w.ID)
 
 	for {
-		job := w.Queue.Pop()
-		w.Process(job)
+		// job := w.Queue.Pop()
+		claimed := w.Queue.Claim()
+		w.Process(claimed.Job)
+		w.Queue.Ack(claimed.Raw)
 	}
 }
 
@@ -40,7 +42,7 @@ func (w *Worker) Process(job *models.Job) {
 	log.Printf("Worker processing job: worker_id=%d job_id=%s language=%s", w.ID, job.ID, job.Language)
 
 	job.Status = "running"
-
+	job.ClaimedAt = time.Now()
 	w.Store.Update(job)
 
 	dir, err := workspace.CreateWorkspace()

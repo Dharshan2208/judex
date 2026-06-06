@@ -9,6 +9,7 @@ type Job struct {
 	Status   string `json:"status"`
 
 	CreatedAt   time.Time `json:"created_at"`
+	ClaimedAt   time.Time `json:"claimed_at"`
 	CompletedAt time.Time `json:"completed_at"`
 
 	Result RunResponse `json:"result"`

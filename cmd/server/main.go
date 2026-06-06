@@ -15,6 +15,8 @@ func main() {
 	cleanup.Start(application.Store, 15*time.Minute)
 	application.Pool.Start()
 
+	application.Queue.StartRecovery(application.Store, 5*time.Minute)
+
 	http.HandleFunc("/run", handler.SubmitHandler(application))
 	http.HandleFunc("/result/", handler.ResultHandler(application))
 	http.HandleFunc("/health", handler.HealthHandler(application))
