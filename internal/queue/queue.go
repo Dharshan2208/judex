@@ -151,12 +151,12 @@ func (q *Queue) StartRecovery(s *store.RedisStore, timeout time.Duration) {
 		defer ticker.Stop()
 
 		for range ticker.C {
-			q.recoverStruckjobs(s, timeout)
+			q.recoverStuck(s, timeout)
 		}
 	}()
 }
 
-func (q *Queue) recoverStruckjobs(s *store.RedisStore, timeout time.Duration) {
+func (q *Queue) recoverStuck(s *store.RedisStore, timeout time.Duration) {
 	ctx := context.Background()
 
 	items, err := q.Client.LRange(ctx, q.Running, 0, -1).Result()
@@ -193,21 +193,23 @@ func (q *Queue) recoverStruckjobs(s *store.RedisStore, timeout time.Duration) {
 		storedJob.ClaimedAt = time.Time{}
 		s.Update(storedJob)
 
-		removed, err := q.Client.LRem(ctx, q.Running, 1, raw).Result()
-		if err != nil {
-			log.Printf("recovery remove failed: job_id=%s error=%v", queuedJob.ID, err)
-			continue
-		}
+		if storedJob.Status == "pending" && now.Sub(storedJob.CreatedAt) >= timeout {
+			removed, err := q.Client.LRem(ctx, q.Running, 1, raw).Result()
+			if err != nil {
+				log.Printf("recovery remove failed: job_id=%s error=%v", queuedJob.ID, err)
+				continue
+			}
 
-		if removed == 0 {
-			continue
-		}
+			if removed == 0 {
+				continue
+			}
 
-		if err := q.Client.LPush(ctx, q.Pending, raw).Err(); err != nil {
-			log.Printf("recovery requeue failed: job_id=%s error=%v", queuedJob.ID, err)
-			continue
-		}
+			if err := q.Client.LPush(ctx, q.Pending, raw).Err(); err != nil {
+				log.Printf("recovery requeue failed: job_id=%s error=%v", queuedJob.ID, err)
+				continue
+			}
 
-		log.Printf("recovered stuck job: job_id=%s", queuedJob.ID)
+			log.Printf("recovered stuck job: job_id=%s", queuedJob.ID)
+		}
 	}
 }
