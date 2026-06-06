@@ -7,17 +7,18 @@ import (
 	"github.com/Dharshan2208/code-compiler/internal/executor"
 	"github.com/Dharshan2208/code-compiler/internal/models"
 	"github.com/Dharshan2208/code-compiler/internal/queue"
+	"github.com/Dharshan2208/code-compiler/internal/store"
 	"github.com/Dharshan2208/code-compiler/internal/workspace"
 )
 
 type Worker struct {
 	ID    int
 	Queue *queue.Queue
-	Store *queue.Store
+	Store *store.RedisStore
 	Stats *queue.Stats
 }
 
-func NewWorker(id int, q *queue.Queue, s *queue.Store, stats *queue.Stats) *Worker {
+func NewWorker(id int, q *queue.Queue, s *store.RedisStore, stats *queue.Stats) *Worker {
 	return &Worker{
 		ID:    id,
 		Queue: q,

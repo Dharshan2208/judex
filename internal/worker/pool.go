@@ -4,13 +4,14 @@ import (
 	"log"
 
 	"github.com/Dharshan2208/code-compiler/internal/queue"
+	"github.com/Dharshan2208/code-compiler/internal/store"
 )
 
 type Pool struct {
 	Workers []*Worker
 }
 
-func NewPool(count int, q *queue.Queue, s *queue.Store, stats *queue.Stats) *Pool {
+func NewPool(count int, q *queue.Queue, s *store.RedisStore, stats *queue.Stats) *Pool {
 	pool := &Pool{}
 	log.Printf("creating worker pool: count=%d", count)
 

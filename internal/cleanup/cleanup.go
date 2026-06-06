@@ -4,10 +4,10 @@ import (
 	"log"
 	"time"
 
-	"github.com/Dharshan2208/code-compiler/internal/queue"
+	"github.com/Dharshan2208/code-compiler/internal/store"
 )
 
-func Start(s *queue.Store, ttl time.Duration) {
+func Start(s *store.RedisStore, ttl time.Duration) {
 	go func() {
 		for {
 			time.Sleep(time.Minute)
