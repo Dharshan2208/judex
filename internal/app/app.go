@@ -20,9 +20,8 @@ type App struct {
 func New() *App {
 	log.Println("Initializing application...")
 
-	q := queue.NewQueue(100)
-
 	redisClient := redisclient.New()
+	q := queue.NewQueue(redisClient, 100)
 	s := store.NewRedisStore(redisClient)
 	stats := &queue.Stats{}
 

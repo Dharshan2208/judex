@@ -82,8 +82,8 @@ func HealthHandler(application *app.App) http.HandlerFunc {
 		resp := models.HealthResponse{
 			Status: "ok",
 
-			QueueLength: len(application.Queue.Jobs),
-			QueueCap:    cap(application.Queue.Jobs),
+			QueueLength: int(application.Queue.Len()),
+			QueueCap:    int(application.Queue.Cap()),
 
 			Submitted: submitted,
 			Completed: completed,

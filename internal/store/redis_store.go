@@ -24,7 +24,7 @@ func NewRedisStore(client *redis.Client) *RedisStore {
 }
 
 func jobKey(id string) string {
-	return "job : " + id
+	return "job:" + id
 }
 
 func (s *RedisStore) Add(job *models.Job) {
