@@ -6,6 +6,8 @@ import (
 
 	"github.com/Dharshan2208/code-compiler/internal/app"
 	"github.com/Dharshan2208/code-compiler/internal/handler"
+	"github.com/Dharshan2208/code-compiler/internal/limiter"
+	"github.com/Dharshan2208/code-compiler/internal/middleware"
 )
 
 func main() {
@@ -14,7 +16,15 @@ func main() {
 
 	application := app.NewAPI()
 
-	http.HandleFunc("/run", handler.SubmitHandler(application))
+	ratelimiter := limiter.NewManager(10, 1)
+
+	http.Handle(
+		"/run",
+		middleware.RateLimit(ratelimiter)(
+			http.HandlerFunc(handler.SubmitHandler(application)),
+		),
+	)
+
 	http.HandleFunc("/result/", handler.ResultHandler(application))
 	http.HandleFunc("/health", handler.HealthHandler(application))
 

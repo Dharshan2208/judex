@@ -78,14 +78,18 @@ func (w *Worker) Process(job *models.Job) {
 	case "cpp":
 		filename = "main.cpp"
 		execLang = executor.CppExecutor{}
-	
+
 	case "java":
 		filename = "Main.java"
 		execLang = executor.JavaExecutor{}
-	
+
 	case "go":
 		filename = "main.go"
 		execLang = executor.GoExecutor{}
+
+	case "c":
+		filename = "main.c"
+		execLang = executor.CExecutor{}
 
 	default:
 		log.Printf("job failed: worker_id=%d job_id=%s reason=unsupported_language language=%s", w.ID, job.ID, job.Language)
