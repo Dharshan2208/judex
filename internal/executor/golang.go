@@ -1,6 +1,7 @@
 package executor
 
 import (
+	"context"
 	"time"
 
 	"github.com/Dharshan2208/judex/internal/sandbox"
@@ -8,14 +9,10 @@ import (
 
 type GoExecutor struct{}
 
-func (g GoExecutor) Execute(file string, workspace string) Result {
-	sb := sandbox.Sandbox{}
-
+func (g GoExecutor) Execute(ctx context.Context, sb *sandbox.Sandbox) Result {
 	start := time.Now()
 
-	compileRes := sb.Run(
-		"compiler-go",
-		workspace,
+	compileRes := sb.Execute(ctx,
 		[]string{
 			"sh",
 			"-c",
@@ -38,9 +35,7 @@ func (g GoExecutor) Execute(file string, workspace string) Result {
 		}
 	}
 
-	runRes := sb.Run(
-		"compiler-go",
-		workspace,
+	runRes := sb.Execute(ctx,
 		[]string{
 			"./app",
 		},

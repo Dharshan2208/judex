@@ -1,6 +1,7 @@
 package executor
 
 import (
+	"context"
 	"time"
 
 	"github.com/Dharshan2208/judex/internal/sandbox"
@@ -8,14 +9,10 @@ import (
 
 type PythonExecutor struct{}
 
-func (p PythonExecutor) Execute(file string, workspace string) Result {
-	sb := sandbox.Sandbox{}
-
+func (p PythonExecutor) Execute(ctx context.Context, sb *sandbox.Sandbox) Result {
 	start := time.Now()
 
-	res := sb.Run(
-		"compiler-python",
-		workspace,
+	res := sb.Execute(ctx,
 		[]string{
 			"python3",
 			"main.py",
