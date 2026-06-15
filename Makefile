@@ -27,12 +27,12 @@ run-worker: ## Start the worker (development)
 	$(GO) run ./cmd/worker
 
 # Docker Compose
-compose-up: ## Start all services via Docker Compose
+up: ## Start all services via Docker Compose
 	mkdir -p /app/temp
 	docker compose up --build
 	@echo "Services started. Run 'make compose-down' to stop."
 
-compose-down: ## Stop all Docker Compose services
+down: ## Stop all Docker Compose services
 	docker compose down
 
 # Code Quality

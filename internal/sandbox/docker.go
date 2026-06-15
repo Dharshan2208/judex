@@ -24,17 +24,23 @@ type Sandbox struct {
 
 func (s *Sandbox) Execute(ctx context.Context, command []string) Result {
 	execConfig := container.ExecOptions{
-		User:         "1000",
+		User: "1000",
+		Env: []string{
+			"HOME=/tmp",
+			"GOCACHE=/var/cache/go-cache",
+		},
 		Cmd:          command,
 		AttachStdout: true,
 		AttachStderr: true,
 		WorkingDir:   "/workspace",
 	}
 
+	// t0 := time.Now()
 	execResp, err := s.Manager.cli.ContainerExecCreate(ctx, s.Container.ID, execConfig)
 	if err != nil {
 		return Result{Error: err}
 	}
+	// log.Printf("ExecCreate: %v", time.Since(t0))
 
 	log.Printf(
 		"Executing in container=%s workdir=/workspace cmd=%v",
@@ -42,22 +48,28 @@ func (s *Sandbox) Execute(ctx context.Context, command []string) Result {
 		command,
 	)
 
+	// t1 := time.Now()
 	attachResp, err := s.Manager.cli.ContainerExecAttach(ctx, execResp.ID, container.ExecStartOptions{})
 	if err != nil {
 		return Result{Error: err}
 	}
+	// log.Printf("ExecAttach: %v", time.Since(t1))
 	defer attachResp.Close()
 
 	var stdout, stderr bytes.Buffer
+	// t2 := time.Now()
 	// stdcopy helps split the multiplexed stream from Docker back into stdout and stderr
 	if _, err := stdcopy.StdCopy(&stdout, &stderr, attachResp.Reader); err != nil {
 		return Result{Error: err}
 	}
+	// log.Printf("Command execution: %v", time.Since(t2))
 
+	// t3 := time.Now()
 	inspectResp, err := s.Manager.cli.ContainerExecInspect(ctx, execResp.ID)
 	if err != nil {
 		return Result{Error: err}
 	}
+	// log.Printf("ExecInspect: %v", time.Since(t3))
 
 	status := "success"
 	if inspectResp.ExitCode != 0 {
