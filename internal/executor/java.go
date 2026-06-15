@@ -15,11 +15,11 @@ func (j JavaExecutor) Execute(ctx context.Context, sb *sandbox.Sandbox) Result {
 	compileRes := sb.Execute(ctx,
 		[]string{
 			"javac",
-			"Main.java",
+			"/workspace/Main.java",
 		},
 	)
 
-	if compileRes.Error != nil {
+	if compileRes.Status != "success" {
 		return Result{
 			Stdout: compileRes.Stdout,
 			Stderr: compileRes.Stderr,
@@ -30,6 +30,8 @@ func (j JavaExecutor) Execute(ctx context.Context, sb *sandbox.Sandbox) Result {
 	runRes := sb.Execute(ctx,
 		[]string{
 			"java",
+			"-cp",
+			"/workspace",
 			"Main",
 		},
 	)

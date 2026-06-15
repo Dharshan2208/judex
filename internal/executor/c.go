@@ -15,13 +15,13 @@ func (c CExecutor) Execute(ctx context.Context, sb *sandbox.Sandbox) Result {
 	compileResult := sb.Execute(ctx,
 		[]string{
 			"gcc",
-			"main.c",
+			"/workspace/main.c",
 			"-o",
-			"app",
+			"/workspace/app",
 		},
 	)
 
-	if compileResult.Error != nil {
+	if compileResult.Status != "success" {
 		if compileResult.Stderr == "execution timeout" {
 			return Result{
 				Stderr: compileResult.Stderr,
@@ -38,7 +38,7 @@ func (c CExecutor) Execute(ctx context.Context, sb *sandbox.Sandbox) Result {
 
 	runResult := sb.Execute(ctx,
 		[]string{
-			"./app",
+			"/workspace/app",
 		},
 	)
 

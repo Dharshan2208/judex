@@ -1,29 +1,32 @@
 package worker
 
 import (
+	"context"
 	"log"
 	"time"
 
 	"github.com/Dharshan2208/judex/internal/executor"
 	"github.com/Dharshan2208/judex/internal/models"
 	"github.com/Dharshan2208/judex/internal/queue"
+	"github.com/Dharshan2208/judex/internal/sandbox"
 	"github.com/Dharshan2208/judex/internal/store"
-	"github.com/Dharshan2208/judex/internal/workspace"
 )
 
 type Worker struct {
-	ID    int
-	Queue *queue.Queue
-	Store *store.RedisStore
-	Stats *queue.Stats
+	ID          int
+	Queue       *queue.Queue
+	Store       *store.RedisStore
+	Stats       *queue.Stats
+	PoolManager *sandbox.PoolManager
 }
 
-func NewWorker(id int, q *queue.Queue, s *store.RedisStore, stats *queue.Stats) *Worker {
+func NewWorker(id int, q *queue.Queue, s *store.RedisStore, stats *queue.Stats, pm *sandbox.PoolManager) *Worker {
 	return &Worker{
-		ID:    id,
-		Queue: q,
-		Store: s,
-		Stats: stats,
+		ID:          id,
+		Queue:       q,
+		Store:       s,
+		Stats:       stats,
+		PoolManager: pm,
 	}
 }
 
@@ -31,7 +34,6 @@ func (w *Worker) Start() {
 	log.Printf("worker started: worker_id=%d", w.ID)
 
 	for {
-		// job := w.Queue.Pop()
 		claimed := w.Queue.Claim()
 		w.Process(claimed.Job)
 		w.Queue.Ack(claimed.Raw)
@@ -45,71 +47,42 @@ func (w *Worker) Process(job *models.Job) {
 	job.ClaimedAt = time.Now()
 	w.Store.Update(job)
 
-	dir, err := workspace.CreateWorkspace()
+	// creating a context for the entier lifecycle (maybe 20secs max)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// step1 acquiring a warm container
+	warmContainer, err := w.PoolManager.Acquire(ctx, job.Language)
 	if err != nil {
-		log.Printf("workspace create failed: worker_id=%d job_id=%s error=%v", w.ID, job.ID, err)
-		job.Status = "failed"
-		w.Store.Update(job)
-		w.Stats.IncFailed()
-		return
-	}
-	log.Printf("workspace created: worker_id=%d job_id=%s dir=%s", w.ID, job.ID, dir)
-
-	defer func() {
-		if err := workspace.Cleanup(dir); err != nil {
-			log.Printf("workspace cleanup failed: worker_id=%d job_id=%s dir=%s error=%v", w.ID, job.ID, dir, err)
-			return
-		}
-
-		log.Printf("workspace cleaned: worker_id=%d job_id=%s dir=%s", w.ID, job.ID, dir)
-	}()
-
-	var (
-		filename string
-		execLang executor.Executor
-	)
-
-	switch job.Language {
-
-	case "python":
-		filename = "main.py"
-		execLang = executor.PythonExecutor{}
-
-	case "cpp":
-		filename = "main.cpp"
-		execLang = executor.CppExecutor{}
-
-	case "java":
-		filename = "Main.java"
-		execLang = executor.JavaExecutor{}
-
-	case "go":
-		filename = "main.go"
-		execLang = executor.GoExecutor{}
-
-	case "c":
-		filename = "main.c"
-		execLang = executor.CExecutor{}
-
-	default:
-		log.Printf("job failed: worker_id=%d job_id=%s reason=unsupported_language language=%s", w.ID, job.ID, job.Language)
-		job.Status = "failed"
-		w.Store.Update(job)
-		w.Stats.IncFailed()
+		log.Printf("failed to acquire container: worker_id=%d job_id=%s error=%v", w.ID, job.ID, err)
+		w.failJob(job, "internal_error")
 		return
 	}
 
-	file, err := workspace.WriteFile(dir, filename, job.Code)
-	if err != nil {
-		log.Printf("workspace write failed: worker_id=%d job_id=%s file=%s error=%v", w.ID, job.ID, filename, err)
-		job.Status = "failed"
-		w.Store.Update(job)
-		w.Stats.IncFailed()
+	// santising container (ensuring that the container cleaned and returnd after completion)
+	defer w.PoolManager.Release(context.Background(), warmContainer)
+
+	// wrapping container in sanbox internface
+	sb := &sandbox.Sandbox{
+		Container: warmContainer,
+		Manager:   w.PoolManager,
+	}
+
+	filename, execLang := w.getExecutor(job.Language)
+	if execLang == nil {
+		log.Printf("unsupported language : %s", job.Language)
+		w.failJob(job, "unsupported language")
 		return
 	}
-	log.Printf("workspace file written: worker_id=%d job_id=%s file=%s", w.ID, job.ID, file)
 
-	result := execLang.Execute(file, dir)
+	// uploading the file(basically streaming code directly into containers memory)
+	if err := sb.UploadCode(ctx, filename, job.Code); err != nil {
+		log.Printf("failed to upload code : worker_id=%d job_id=%s error=%v", w.ID, job.ID, err)
+		w.failJob(job, "internal_error")
+		return
+	}
+
+	result := execLang.Execute(ctx, sb)
 
 	job.Result = models.RunResponse{
 		Stdout:        result.Stdout,
@@ -130,4 +103,27 @@ func (w *Worker) Process(job *models.Job) {
 	job.CompletedAt = time.Now()
 	w.Store.Update(job)
 	log.Printf("job finished: worker_id=%d job_id=%s status=%s language=%s", w.ID, job.ID, job.Status, job.Language)
+}
+
+func (w *Worker) failJob(job *models.Job, status string) {
+	job.Status = status
+	w.Store.Update(job)
+	w.Stats.IncFailed()
+}
+
+func (w *Worker) getExecutor(lang string) (string, executor.Executor) {
+	switch lang {
+	case "python":
+		return "main.py", executor.PythonExecutor{}
+	case "java":
+		return "Main.java", executor.JavaExecutor{}
+	case "go":
+		return "main.go", executor.GoExecutor{}
+	case "cpp":
+		return "main.cpp", executor.CppExecutor{}
+	case "c":
+		return "main.c", executor.CExecutor{}
+	default:
+		return "", nil
+	}
 }

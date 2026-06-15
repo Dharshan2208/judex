@@ -56,9 +56,8 @@ func (pm *PoolManager) createWarmContainer(ctx context.Context, lang, image stri
 		// keeping the containers alvie
 		Cmd: []string{"tail", "-f", "/dev/null"},
 		// for non root user so 1000
-		User:       "1000",
 		WorkingDir: "/workspace",
-		Tty:        true,
+		Tty:        false,
 	}
 
 	hostConfig := &container.HostConfig{
@@ -71,10 +70,10 @@ func (pm *PoolManager) createWarmContainer(ctx context.Context, lang, image stri
 		CapDrop:     []string{"ALL"},
 		SecurityOpt: []string{"no-new-privileges"},
 		// we using tmpfs for /workspace and /tmp for speed and easy cleanup
-		Tmpfs: map[string]string{
-			"/workspace": "rw,size=64m",
-			"/tmp":       "rw,size=64m",
-		},
+		// Tmpfs: map[string]string{
+		// 	"/workspace": "rw,size=64m",
+		// 	"/tmp":       "rw,size=64m",
+		// },
 	}
 
 	resp, err := pm.cli.ContainerCreate(ctx, config, hostConfig, nil, nil, "")

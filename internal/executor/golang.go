@@ -16,11 +16,11 @@ func (g GoExecutor) Execute(ctx context.Context, sb *sandbox.Sandbox) Result {
 		[]string{
 			"sh",
 			"-c",
-			"GOCACHE=/tmp/go-cache go build -o app main.go",
+			"GOCACHE=/var/cache/go-cache go build -o /workspace/app /workspace/main.go",
 		},
 	)
 
-	if compileRes.Error != nil {
+	if compileRes.Status != "success" {
 		if compileRes.Stderr == "execution timeout" {
 			return Result{
 				Stderr: compileRes.Stderr,

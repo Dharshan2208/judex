@@ -5,6 +5,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /workspace
+RUN chmod 777 /workspace
 
 CMD ["gcc", "--version"]
 
