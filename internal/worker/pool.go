@@ -4,6 +4,7 @@ import (
 	"log"
 
 	"github.com/Dharshan2208/judex/internal/queue"
+	"github.com/Dharshan2208/judex/internal/sandbox"
 	"github.com/Dharshan2208/judex/internal/store"
 )
 
@@ -11,14 +12,14 @@ type Pool struct {
 	Workers []*Worker
 }
 
-func NewPool(count int, q *queue.Queue, s *store.RedisStore, stats *queue.Stats) *Pool {
+func NewPool(count int, q *queue.Queue, s *store.RedisStore, stats *queue.Stats, pm *sandbox.PoolManager) *Pool {
 	pool := &Pool{}
 	log.Printf("creating worker pool: count=%d", count)
 
 	for i := 1; i <= count; i++ {
 		pool.Workers = append(
 			pool.Workers,
-			NewWorker(i, q, s, stats),
+			NewWorker(i, q, s, stats, pm),
 		)
 	}
 

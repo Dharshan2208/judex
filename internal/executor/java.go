@@ -1,6 +1,7 @@
 package executor
 
 import (
+	"context"
 	"time"
 
 	"github.com/Dharshan2208/judex/internal/sandbox"
@@ -8,21 +9,17 @@ import (
 
 type JavaExecutor struct{}
 
-func (j JavaExecutor) Execute(file string, workspace string) Result {
-	sb := sandbox.Sandbox{}
-
+func (j JavaExecutor) Execute(ctx context.Context, sb *sandbox.Sandbox) Result {
 	start := time.Now()
 
-	compileRes := sb.Run(
-		"compiler-java",
-		workspace,
+	compileRes := sb.Execute(ctx,
 		[]string{
 			"javac",
-			"Main.java",
+			"/workspace/Main.java",
 		},
 	)
 
-	if compileRes.Error != nil {
+	if compileRes.Status != "success" {
 		return Result{
 			Stdout: compileRes.Stdout,
 			Stderr: compileRes.Stderr,
@@ -30,11 +27,11 @@ func (j JavaExecutor) Execute(file string, workspace string) Result {
 		}
 	}
 
-	runRes := sb.Run(
-		"compiler-java",
-		workspace,
+	runRes := sb.Execute(ctx,
 		[]string{
 			"java",
+			"-cp",
+			"/workspace",
 			"Main",
 		},
 	)

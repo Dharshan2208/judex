@@ -1,6 +1,8 @@
 package executor
 
 import (
+	"context"
+	"log"
 	"time"
 
 	"github.com/Dharshan2208/judex/internal/sandbox"
@@ -8,22 +10,21 @@ import (
 
 type GoExecutor struct{}
 
-func (g GoExecutor) Execute(file string, workspace string) Result {
-	sb := sandbox.Sandbox{}
-
+func (g GoExecutor) Execute(ctx context.Context, sb *sandbox.Sandbox) Result {
 	start := time.Now()
 
-	compileRes := sb.Run(
-		"compiler-go",
-		workspace,
+	compileRes := sb.Execute(ctx,
 		[]string{
-			"sh",
-			"-c",
-			"GOCACHE=/tmp/go-cache go build -o app main.go",
+			"go",
+			"build",
+			"-o",
+			"/workspace/app",
+			"/workspace/main.go",
 		},
 	)
+	log.Printf("Go run took %v", time.Since(start))
 
-	if compileRes.Error != nil {
+	if compileRes.Status != "success" {
 		if compileRes.Stderr == "execution timeout" {
 			return Result{
 				Stderr: compileRes.Stderr,
@@ -38,9 +39,7 @@ func (g GoExecutor) Execute(file string, workspace string) Result {
 		}
 	}
 
-	runRes := sb.Run(
-		"compiler-go",
-		workspace,
+	runRes := sb.Execute(ctx,
 		[]string{
 			"./app",
 		},

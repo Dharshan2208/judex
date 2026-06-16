@@ -1,82 +1,113 @@
 package sandbox
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
 	"log"
-	"os/exec"
-	"time"
+
+	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/pkg/stdcopy"
 )
 
 type Result struct {
 	Stdout string
 	Stderr string
+	Status string
 	Error  error
 }
 
-type Sandbox struct{}
+type Sandbox struct {
+	Container *WarmContainer
+	Manager   *PoolManager
+}
 
-func (s *Sandbox) Run(image string, workspace string, command []string) Result {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	log.Printf("Sandbox run started: image=%s workspace=%s command=%v", image, workspace, command)
-
-	args := []string{
-		"run",
-		"--rm",
-
-		"--memory=256m",
-		"--cpus=1",
-		"--pids-limit=64",
-
-		"--network=none",
-
-		"--read-only",
-		"--tmpfs", "/tmp:size=64m",
-
-		"-e", "GOCACHE=/tmp/go-cache",
-
-		"--security-opt=no-new-privileges",
-		"--cap-drop=ALL",
-
-		"-v",
-		workspace + ":/workspace",
-
-		"-w",
-		"/workspace",
-
-		image,
+func (s *Sandbox) Execute(ctx context.Context, command []string) Result {
+	execConfig := container.ExecOptions{
+		User: "1000",
+		Env: []string{
+			"HOME=/tmp",
+			"GOCACHE=/var/cache/go-cache",
+		},
+		Cmd:          command,
+		AttachStdout: true,
+		AttachStderr: true,
+		WorkingDir:   "/workspace",
 	}
 
-	args = append(args, command...)
-
-	cmd := exec.CommandContext(ctx, "docker", args...)
-
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	err := cmd.Run()
-	if ctx.Err() == context.DeadlineExceeded {
-		log.Printf("sandbox run timed out: image=%s workspace=%s", image, workspace)
-		return Result{
-			Stderr: "execution timeout",
-			Error:  ctx.Err(),
-		}
-	}
-
+	// t0 := time.Now()
+	execResp, err := s.Manager.cli.ContainerExecCreate(ctx, s.Container.ID, execConfig)
 	if err != nil {
-		log.Printf("sandbox run failed: image=%s workspace=%s error=%v stderr=%q", image, workspace, err, stderr.String())
-	} else {
-		log.Printf("sandbox run completed: image=%s workspace=%s stdout_bytes=%d stderr_bytes=%d", image, workspace, stdout.Len(), stderr.Len())
+		return Result{Error: err}
+	}
+	// log.Printf("ExecCreate: %v", time.Since(t0))
+
+	log.Printf(
+		"Executing in container=%s workdir=/workspace cmd=%v",
+		s.Container.ID,
+		command,
+	)
+
+	// t1 := time.Now()
+	attachResp, err := s.Manager.cli.ContainerExecAttach(ctx, execResp.ID, container.ExecStartOptions{})
+	if err != nil {
+		return Result{Error: err}
+	}
+	// log.Printf("ExecAttach: %v", time.Since(t1))
+	defer attachResp.Close()
+
+	var stdout, stderr bytes.Buffer
+	// t2 := time.Now()
+	// stdcopy helps split the multiplexed stream from Docker back into stdout and stderr
+	if _, err := stdcopy.StdCopy(&stdout, &stderr, attachResp.Reader); err != nil {
+		return Result{Error: err}
+	}
+	// log.Printf("Command execution: %v", time.Since(t2))
+
+	// t3 := time.Now()
+	inspectResp, err := s.Manager.cli.ContainerExecInspect(ctx, execResp.ID)
+	if err != nil {
+		return Result{Error: err}
+	}
+	// log.Printf("ExecInspect: %v", time.Since(t3))
+
+	status := "success"
+	if inspectResp.ExitCode != 0 {
+		status = "failed"
 	}
 
 	return Result{
 		Stdout: stdout.String(),
 		Stderr: stderr.String(),
-		Error:  err,
+		Status: status,
 	}
+}
+
+func (s *Sandbox) UploadCode(ctx context.Context, filename string, content string) error {
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+
+	if err := tw.WriteHeader(&tar.Header{
+		Name: filename,
+		Mode: 0o666,
+		Size: int64(len(content)),
+	}); err != nil {
+		return err
+	}
+
+	if _, err := tw.Write([]byte(content)); err != nil {
+		return err
+	}
+
+	if err := tw.Close(); err != nil {
+		return err
+	}
+
+	return s.Manager.cli.CopyToContainer(
+		ctx,
+		s.Container.ID,
+		"/workspace",
+		bytes.NewReader(buf.Bytes()),
+		container.CopyToContainerOptions{},
+	)
 }

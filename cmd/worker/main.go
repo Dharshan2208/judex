@@ -18,6 +18,6 @@ func main() {
 	application.Queue.StartRecovery(application.Store, 5*time.Minute)
 	application.Pool.Start()
 
-	log.Println("worker service running")
+	log.Println("worker service running(with warm pool)")
 	select {}
 }

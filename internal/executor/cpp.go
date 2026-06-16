@@ -1,7 +1,7 @@
 package executor
 
 import (
-	"log"
+	"context"
 	"time"
 
 	"github.com/Dharshan2208/judex/internal/sandbox"
@@ -9,33 +9,24 @@ import (
 
 type CppExecutor struct{}
 
-func (c CppExecutor) Execute(file string, workspace string) Result {
-	sb := sandbox.Sandbox{}
-
-	// log.Printf("cpp compile started: file=%s workspace=%s", file, workspace)
+func (c CppExecutor) Execute(ctx context.Context, sb *sandbox.Sandbox) Result {
 	start := time.Now()
-	compileResult := sb.Run(
-		"compiler-cpp",
-		workspace,
+	compileResult := sb.Execute(ctx,
 		[]string{
 			"g++",
-			"main.cpp",
+			"/workspace/main.cpp",
 			"-o",
 			"app",
 		},
 	)
 
-	if compileResult.Error != nil {
+	if compileResult.Status != "success" {
 		if compileResult.Stderr == "execution timeout" {
-			log.Printf("cpp compile timed out: file=%s workspace=%s", file, workspace)
-
 			return Result{
 				Stderr: compileResult.Stderr,
 				Status: "timeout",
 			}
 		}
-
-		log.Printf("cpp compile failed: file=%s workspace=%s stderr=%q", file, workspace, compileResult.Stderr)
 
 		return Result{
 			Stdout: compileResult.Stdout,
@@ -44,29 +35,20 @@ func (c CppExecutor) Execute(file string, workspace string) Result {
 		}
 	}
 
-	log.Printf("cpp compile completed: file=%s workspace=%s", file, workspace)
-	log.Printf("cpp run started: file=%s workspace=%s", file, workspace)
-
-	runResult := sb.Run(
-		"compiler-cpp",
-		workspace,
+	runResult := sb.Execute(ctx,
 		[]string{
-			"./app",
+			"/workspace/app",
 		},
 	)
 
 	elapsed := time.Since(start)
 	if runResult.Error != nil {
 		if runResult.Stderr == "execution timeout" {
-			log.Printf("cpp run timed out: file=%s workspace=%s", file, workspace)
-
 			return Result{
 				Stderr: runResult.Stderr,
 				Status: "timeout",
 			}
 		}
-
-		log.Printf("cpp run failed: file=%s workspace=%s stderr=%q", file, workspace, runResult.Stderr)
 
 		return Result{
 			Stdout:        runResult.Stdout,
@@ -75,8 +57,6 @@ func (c CppExecutor) Execute(file string, workspace string) Result {
 			ExecutionTime: elapsed.Milliseconds(),
 		}
 	}
-
-	log.Printf("cpp run completed: file=%s workspace=%s", file, workspace)
 
 	return Result{
 		Stdout:        runResult.Stdout,
