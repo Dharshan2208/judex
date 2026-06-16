@@ -4,11 +4,11 @@ import (
 	"context"
 	"testing"
 
-	"github.com/agiledragon/gomonkey/v2"
 	"github.com/Dharshan2208/judex/internal/queue"
 	"github.com/Dharshan2208/judex/internal/sandbox"
 	"github.com/Dharshan2208/judex/internal/store"
 	"github.com/Dharshan2208/judex/tests"
+	"github.com/agiledragon/gomonkey/v2"
 )
 
 func TestWorkerProcessSuccess(t *testing.T) {

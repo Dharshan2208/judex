@@ -3,9 +3,9 @@ package tests
 import (
 	"encoding/binary"
 	"encoding/json"
-	"net/url"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
