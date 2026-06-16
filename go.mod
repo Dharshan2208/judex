@@ -1,6 +1,6 @@
 module github.com/Dharshan2208/judex
 
-go 1.25.9
+go 1.25.0
 
 require (
 	github.com/agiledragon/gomonkey/v2 v2.14.0
