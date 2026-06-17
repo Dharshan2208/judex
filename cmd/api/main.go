@@ -1,18 +1,17 @@
 package main
 
 import (
-	"log"
 	"net/http"
 
 	"github.com/Dharshan2208/judex/internal/app"
 	"github.com/Dharshan2208/judex/internal/handler"
 	"github.com/Dharshan2208/judex/internal/limiter"
+	"github.com/Dharshan2208/judex/internal/logutil"
 	"github.com/Dharshan2208/judex/internal/middleware"
 )
 
 func main() {
-	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
-	log.SetPrefix("[api] ")
+	logutil.Init("API")
 
 	application := app.NewAPI()
 
@@ -28,6 +27,6 @@ func main() {
 	http.HandleFunc("/result/", handler.ResultHandler(application))
 	http.HandleFunc("/health", handler.HealthHandler(application))
 
-	log.Println("api server starting: addr=:8080")
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	logutil.Info("api server starting: addr=:8080")
+	logutil.Fatal("http server failed: %v", http.ListenAndServe(":8080", nil))
 }

@@ -1,8 +1,7 @@
 package app
 
 import (
-	"log"
-
+	"github.com/Dharshan2208/judex/internal/logutil"
 	"github.com/Dharshan2208/judex/internal/queue"
 	redisclient "github.com/Dharshan2208/judex/internal/redis"
 	"github.com/Dharshan2208/judex/internal/sandbox"
@@ -34,7 +33,7 @@ func NewWorker() *App {
 }
 
 func newApp(role string, workerCount int) *App {
-	log.Printf("application initializing: role=%s", role)
+	logutil.Info("application initializing: role=%s", role)
 
 	redisClient := redisclient.New()
 	q := queue.NewQueue(redisClient, 100)
@@ -57,13 +56,13 @@ func newApp(role string, workerCount int) *App {
 		var err error
 		pm, err = sandbox.NewPoolManager(workerCount, languages)
 		if err != nil {
-			log.Fatalf("failed to initialise the pool mamager : %v", err)
+			logutil.Fatal("failed to initialise the pool mamager : %v", err)
 		}
 
 		p = worker.NewPool(workerCount, q, s, stats, pm)
 	}
 
-	log.Printf("application initialized: role=%s queue_size=100 worker_count=%d", role, workerCount)
+	logutil.Info("application initialized: role=%s queue_size=100 worker_count=%d", role, workerCount)
 
 	return &App{
 		Redis:       redisClient,

@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/Dharshan2208/judex/internal/limiter"
+	"github.com/Dharshan2208/judex/internal/logutil"
 )
 
 func RateLimit(limiter *limiter.RedisManager) func(http.Handler) http.Handler {
@@ -12,6 +13,7 @@ func RateLimit(limiter *limiter.RedisManager) func(http.Handler) http.Handler {
 			ip := getClientIP(r)
 
 			if !limiter.Allow(ip) {
+				logutil.Warn("rate limit exceeded: client_ip=%s path=%s method=%s", ip, r.URL.Path, r.Method)
 				http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
 				return
 			}

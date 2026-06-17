@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/Dharshan2208/judex/internal/logutil"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -38,6 +39,7 @@ func (m *RedisManager) Allow(key string) bool {
 		1800,
 	).Int()
 	if err != nil {
+		logutil.Error("redis rate limiter script failed: key=%s error=%v", redisKey, err)
 		return false
 	}
 

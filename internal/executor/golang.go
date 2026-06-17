@@ -2,7 +2,6 @@ package executor
 
 import (
 	"context"
-	"log"
 	"time"
 
 	"github.com/Dharshan2208/judex/internal/sandbox"
@@ -22,7 +21,6 @@ func (g GoExecutor) Execute(ctx context.Context, sb *sandbox.Sandbox) Result {
 			"/workspace/main.go",
 		},
 	)
-	log.Printf("Go run took %v", time.Since(start))
 
 	if compileRes.Status != "success" {
 		if compileRes.Stderr == "execution timeout" {
