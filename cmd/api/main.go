@@ -17,15 +17,25 @@ func main() {
 
 	ratelimiter := limiter.NewRedisManager(application.Redis, 10, 1)
 
-	http.Handle(
-		"/run",
-		middleware.RateLimit(ratelimiter)(
-			http.HandlerFunc(handler.SubmitHandler(application)),
+	http.Handle("/judex/run",
+		middleware.CORS(
+			middleware.RateLimit(ratelimiter)(
+				http.HandlerFunc(handler.SubmitHandler(application)),
+			),
 		),
 	)
 
-	http.HandleFunc("/result/", handler.ResultHandler(application))
-	http.HandleFunc("/health", handler.HealthHandler(application))
+	http.Handle("/judex/result/",
+		middleware.CORS(
+			http.HandlerFunc(handler.ResultHandler(application)),
+		),
+	)
+
+	http.Handle("/health",
+		middleware.CORS(
+			http.HandlerFunc(handler.HealthHandler(application)),
+		),
+	)
 
 	logutil.Info("api server starting: addr=:8080")
 	logutil.Fatal("http server failed: %v", http.ListenAndServe(":8080", nil))

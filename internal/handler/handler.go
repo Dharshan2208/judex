@@ -15,6 +15,11 @@ import (
 
 func SubmitHandler(application *app.App) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
 		requestID := uuid.New().String()
 		logutil.Info("request started: method=%s path=%s request_id=%s client_ip=%s", r.Method, r.URL.Path, requestID, r.RemoteAddr)
 
@@ -65,6 +70,11 @@ func SubmitHandler(application *app.App) http.HandlerFunc {
 
 func ResultHandler(application *app.App) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
 		requestID := uuid.New().String()
 		logutil.Info("request started: method=%s path=%s request_id=%s client_ip=%s", r.Method, r.URL.Path, requestID, r.RemoteAddr)
 
@@ -72,7 +82,7 @@ func ResultHandler(application *app.App) http.HandlerFunc {
 			logutil.Info("request finished: method=%s path=%s request_id=%s duration=%v", r.Method, r.URL.Path, requestID, time.Since(start))
 		}(time.Now())
 
-		id := strings.TrimPrefix(r.URL.Path, "/result/")
+		id := strings.TrimPrefix(r.URL.Path, "/judex/result/")
 		logutil.Debug("result requested: job_id=%s request_id=%s", id, requestID)
 
 		job, exists := application.Store.Get(id)
@@ -93,6 +103,11 @@ func ResultHandler(application *app.App) http.HandlerFunc {
 
 func HealthHandler(application *app.App) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
 		requestID := uuid.New().String()
 		logutil.Debug("request started: method=%s path=%s request_id=%s client_ip=%s", r.Method, r.URL.Path, requestID, r.RemoteAddr)
 
