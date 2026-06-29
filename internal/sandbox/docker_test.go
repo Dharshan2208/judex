@@ -43,7 +43,7 @@ func TestPoolReleaseReturnsContainerToPool(t *testing.T) {
 			"go": make(chan *WarmContainer, 1),
 		},
 	}
-	container := &WarmContainer{ID: "c1", Language: "go", Image: "compiler-go"}
+	container := &WarmContainer{ID: "c1", Language: "go", Image: "judex-go"}
 	pm.Release(context.Background(), container)
 
 	select {

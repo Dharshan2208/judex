@@ -16,7 +16,7 @@ help: ## List all available targets with descriptions
 images: $(addprefix image-, $(IMAGES)) ## Build all sandbox Docker images
 
 image-%:
-	docker build -t compiler-$* -f docker/$*/Dockerfile docker/$*
+	docker build -t judex-$* -f docker/$*/Dockerfile docker/$*
 
 # Run
 

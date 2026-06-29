@@ -45,11 +45,11 @@ func newApp(role string, workerCount int) *App {
 	if workerCount > 0 {
 
 		languages := map[string]string{
-			"go":     "compiler-go",
-			"python": "compiler-python",
-			"cpp":    "compiler-cpp",
-			"c":      "compiler-c",
-			"java":   "compiler-java",
+			"go":     "judex-go",
+			"python": "judex-python",
+			"cpp":    "judex-cpp",
+			"c":      "judex-c",
+			"java":   "judex-java",
 		}
 
 		// initialising the poolmamager

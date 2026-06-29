@@ -136,5 +136,5 @@ jobs:
       - name: Build sandbox images
         run: |
           for lang in python cpp c java go; do
-            docker build -t "compiler-${lang}:ci" -f "docker/${lang}/Dockerfile" "docker/${lang}"
+            docker build -t "judex-${lang}:ci" -f "docker/${lang}/Dockerfile" "docker/${lang}"
           done

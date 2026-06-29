@@ -20,7 +20,7 @@ func TestWorkerProcessSuccess(t *testing.T) {
 	patches := gomonkey.NewPatches()
 	defer patches.Reset()
 	patches.ApplyMethod((*sandbox.PoolManager)(nil), "Acquire", func(*sandbox.PoolManager, context.Context, string) (*sandbox.WarmContainer, error) {
-		return &sandbox.WarmContainer{ID: "c1", Language: "python", Image: "compiler-python"}, nil
+		return &sandbox.WarmContainer{ID: "c1", Language: "python", Image: "judex-python"}, nil
 	})
 	patches.ApplyMethod((*sandbox.PoolManager)(nil), "Release", func(*sandbox.PoolManager, context.Context, *sandbox.WarmContainer) {})
 	patches.ApplyMethod((*sandbox.Sandbox)(nil), "UploadCode", func(*sandbox.Sandbox, context.Context, string, string) error { return nil })

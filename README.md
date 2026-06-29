@@ -18,19 +18,19 @@ flowchart TD
     Docker["Docker Engine"]
 
     subgraph Sandbox["Sandbox Containers"]
-        Python["compiler-python"]
-        C["compiler-c"]
-        CPP["compiler-cpp"]
-        Go["compiler-go"]
-        Java["compiler-java"]
+        Python["judex-python"]
+        C["judex-c"]
+        CPP["judex-cpp"]
+        Go["judex-go"]
+        Java["judex-java"]
     end
 
-    Client -->|"POST /run"| RateLimiter
+    Client -->|"POST /judex/run"| RateLimiter
     RateLimiter -->|"Token available"| API
     RateLimiter -.->|"429 Too Many Requests"| Client
 
-    Client -->|"GET /result/{id}"| API
-    Client -->|"GET /health"| API
+    Client -->|"GET /judex/result/{id}"| API
+    Client -->|"GET /judex/health"| API
 
     RateLimiter <-->|"Read / Update bucket"| Redis
 
@@ -64,7 +64,7 @@ sequenceDiagram
     participant Worker
     participant Docker
 
-    Client->>API: POST /run { language, code }
+    Client->>API: POST /judex/run { language, code }
 
     Note over API: Rate limit check (Redis token bucket)
     API->>Redis: EVAL rate_limit_lua
@@ -89,7 +89,7 @@ sequenceDiagram
     Worker->>Redis: SET job:{id} result + final status
     Worker->>Redis: LREM processing_jobs 1 <raw>
 
-    Client->>API: GET /result/{job_id}
+    Client->>API: GET /judex/result/{job_id}
     API->>Redis: GET job:{id}
     API-->>Client: 200 { status, stdout, stderr, ... }
 ```
@@ -98,7 +98,7 @@ sequenceDiagram
 
 | Feature | Details |
 |---|---|
-| **HTTP API** | Submit code to `/run`, poll results from `/result/{id}`, check heh at `/health` |
+| **HTTP API** | Submit code to `/judex/run`, poll results from `/judex/result/{id}`, check heh at `/judex/health` |
 | **Async processing** | Jobs are queued in Redis and processed by a pool of background workers |
 | **Redis backed queue** | FIFO ordering via `LPUSH` / blocking `BLMOVE` with atomic claim semantics |
 | **Redis job store** | Full job state persisted as JSON with 24-hour TTL |
@@ -138,11 +138,7 @@ go mod download
 ### Build Sandbox Images
 
 ```bash
-docker build -t compiler-python -f docker/python/Dockerfile docker/python
-docker build -t compiler-cpp   -f docker/cpp/Dockerfile   docker/cpp
-docker build -t compiler-c     -f docker/c/Dockerfile     docker/c
-docker build -t compiler-java  -f docker/java/Dockerfile  docker/java
-docker build -t compiler-go    -f docker/go/Dockerfile    docker/go
+make images
 ```
 
 ### Start Redis
@@ -151,19 +147,6 @@ docker build -t compiler-go    -f docker/go/Dockerfile    docker/go
 docker run --rm --name judex-redis -p 6379:6379 redis:7-alpine
 ```
 
-### Run the API
-
-```bash
-go run ./cmd/api
-```
-
-### Run the Worker
-
-In a separate terminal:
-
-```bash
-go run ./cmd/worker
-```
 
 ## Configuration
 
@@ -183,10 +166,10 @@ REDIS_ADDR=my-redis-host:6379
 
 ```bash
 # Terminal 1 — API
-go run ./cmd/api
+make run-api
 
 # Terminal 2 — Worker
-go run ./cmd/worker
+make run-worker
 ```
 
 ### Production (standalone binaries)
@@ -202,8 +185,7 @@ REDIS_ADDR=localhost:6379 ./bin/worker
 ### Docker Compose
 
 ```bash
-mkdir -p /app/temp   # required for Docker socket bind mount
-docker compose up --build
+make up
 ```
 
 > The `docker-compose.yml` mounts `/app/temp:/app/temp` because the worker uses the host Docker engine through `/var/run/docker.sock`. Sandbox containers need to see the same workspace path.
@@ -233,13 +215,13 @@ Submit a code execution job.
 }
 ```
 
-### `GET /result/{job_id}`
+### `GET /judex/result/{job_id}`
 
 Poll for job status and execution output.
 
 | Field | Value |
 |---|---|
-| Route | `/result/{job_id}` |
+| Route | `/judex/result/{job_id}` |
 | Status values | `pending`, `running`, `completed`, `failed`, `timeout`, `compile_error`, `runtime_error` |
 
 **Completed Python job:**
@@ -282,7 +264,7 @@ Poll for job status and execution output.
 }
 ```
 
-### `GET /health`
+### `GET /judex/health`
 
 Service health and queue metrics.
 
@@ -304,7 +286,7 @@ Service health and queue metrics.
 
 ## Rate Limiting
 
-The `/run` endpoint is protected by a **distributed token bucket** implemented as a Redis Lua script:
+The `/judex/run` endpoint is protected by a **distributed token bucket** implemented as a Redis Lua script:
 
 - **Capacity**: 10 tokens (burst of 10 requests)
 - **Refill rate**: 1 token per second (sustained throughput)
@@ -334,6 +316,3 @@ Each execution runs in a Docker container with the following restrictions:
 
 - [ ] Deploy to a VPS
 - [ ] Build a frontend
-- [ ] Add more languages (Rust, JS..thats all ig)
-- [ ] Improve the job queue with priority levels
-- [ ] Write integration tests
