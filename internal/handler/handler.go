@@ -15,23 +15,20 @@ import (
 
 func SubmitHandler(application *app.App) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 
-		requestID := uuid.New().String()
-		logutil.Info("request started: method=%s path=%s request_id=%s client_ip=%s", r.Method, r.URL.Path, requestID, r.RemoteAddr)
-
-		defer func(start time.Time) {
-			logutil.Info("request finished: method=%s path=%s request_id=%s duration=%v", r.Method, r.URL.Path, requestID, time.Since(start))
-		}(time.Now())
-
 		var req models.RunRequest
 
 		err := json.NewDecoder(r.Body).Decode(&req)
 		if err != nil {
-			logutil.Error("submit request rejected: invalid json: %v request_id=%s client_ip=%s", err, requestID, r.RemoteAddr)
+			logutil.Error(ctx, "submit: invalid request body",
+				"error", err,
+			)
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}
@@ -46,17 +43,23 @@ func SubmitHandler(application *app.App) http.HandlerFunc {
 			CreatedAt: time.Now(),
 		}
 
-		application.Store.Add(job)
+		application.Store.Add(ctx, job)
 
-		if ok := application.Queue.TryPush(job); !ok {
-			application.Store.Delete(job.ID)
-			logutil.Warn("submit request rejected: reason=queue_full job_id=%s language=%s request_id=%s", job.ID, job.Language, requestID)
+		if ok := application.Queue.TryPush(ctx, job); !ok {
+			application.Store.Delete(ctx, job.ID)
+			logutil.Warn(ctx, "submit: queue full, job rejected",
+				"job_id", job.ID,
+				"language", job.Language,
+			)
 			http.Error(w, "queue is full", http.StatusTooManyRequests)
 			return
 		}
 
 		application.Stats.IncSubmitted()
-		logutil.Info("job submitted: job_id=%s language=%s request_id=%s", job.ID, job.Language, requestID)
+		logutil.Info(ctx, "job submitted",
+			"job_id", job.ID,
+			"language", job.Language,
+		)
 
 		response := models.SubmitResponse{
 			JobID:  jobID,
@@ -70,29 +73,28 @@ func SubmitHandler(application *app.App) http.HandlerFunc {
 
 func ResultHandler(application *app.App) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 
-		requestID := uuid.New().String()
-		logutil.Info("request started: method=%s path=%s request_id=%s client_ip=%s", r.Method, r.URL.Path, requestID, r.RemoteAddr)
-
-		defer func(start time.Time) {
-			logutil.Info("request finished: method=%s path=%s request_id=%s duration=%v", r.Method, r.URL.Path, requestID, time.Since(start))
-		}(time.Now())
-
 		id := strings.TrimPrefix(r.URL.Path, "/judex/result/")
-		logutil.Debug("result requested: job_id=%s request_id=%s", id, requestID)
 
-		job, exists := application.Store.Get(id)
+		job, exists := application.Store.Get(ctx, id)
 		if !exists {
-			logutil.Warn("result request failed: job_id=%s reason=job_not_found request_id=%s", id, requestID)
+			logutil.Warn(ctx, "result: job not found",
+				"job_id", id,
+			)
 			http.Error(w, "job not found", http.StatusNotFound)
 			return
 		}
 
-		logutil.Info("result returned: job_id=%s status=%s request_id=%s", job.ID, job.Status, requestID)
+		logutil.Info(ctx, "result returned",
+			"job_id", job.ID,
+			"status", job.Status,
+		)
 
 		response := models.NewJobResponse(job)
 
@@ -103,24 +105,19 @@ func ResultHandler(application *app.App) http.HandlerFunc {
 
 func HealthHandler(application *app.App) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-
-		requestID := uuid.New().String()
-		logutil.Debug("request started: method=%s path=%s request_id=%s client_ip=%s", r.Method, r.URL.Path, requestID, r.RemoteAddr)
-
-		defer func(start time.Time) {
-			logutil.Debug("request finished: method=%s path=%s request_id=%s duration=%v", r.Method, r.URL.Path, requestID, time.Since(start))
-		}(time.Now())
 
 		submitted, completed, failed := application.Stats.Snapshot()
 
 		resp := models.HealthResponse{
 			Status: "ok",
 
-			QueueLength: int(application.Queue.Len()),
+			QueueLength: int(application.Queue.Len(ctx)),
 			QueueCap:    int(application.Queue.Cap()),
 
 			Submitted: submitted,
@@ -128,15 +125,12 @@ func HealthHandler(application *app.App) http.HandlerFunc {
 			Failed:    failed,
 		}
 
-		logutil.Info(
-			"Health returned: status=%s queue_length=%d queue_capacity=%d submitted=%d completed=%d failed=%d request_id=%s",
-			resp.Status,
-			resp.QueueLength,
-			resp.QueueCap,
-			resp.Submitted,
-			resp.Completed,
-			resp.Failed,
-			requestID,
+		logutil.Info(ctx, "health check",
+			"queue_length", resp.QueueLength,
+			"queue_capacity", resp.QueueCap,
+			"submitted", resp.Submitted,
+			"completed", resp.Completed,
+			"failed", resp.Failed,
 		)
 
 		w.Header().Set("Content-Type", "application/json")

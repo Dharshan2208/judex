@@ -1,6 +1,8 @@
 package worker
 
 import (
+	"context"
+
 	"github.com/Dharshan2208/judex/internal/logutil"
 	"github.com/Dharshan2208/judex/internal/queue"
 	"github.com/Dharshan2208/judex/internal/sandbox"
@@ -13,7 +15,9 @@ type Pool struct {
 
 func NewPool(count int, q *queue.Queue, s *store.RedisStore, stats *queue.Stats, pm *sandbox.PoolManager) *Pool {
 	pool := &Pool{}
-	logutil.Info("creating worker pool: count=%d", count)
+	logutil.Info(context.Background(), "creating worker pool",
+		"count", count,
+	)
 
 	for i := 1; i <= count; i++ {
 		pool.Workers = append(
@@ -27,7 +31,9 @@ func NewPool(count int, q *queue.Queue, s *store.RedisStore, stats *queue.Stats,
 
 func (p *Pool) Start() {
 	for _, worker := range p.Workers {
-		logutil.Info("starting worker: id=%d", worker.ID)
+		logutil.Info(context.Background(), "starting worker",
+			"id", worker.ID,
+		)
 		go worker.Start()
 	}
 }

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -13,9 +14,9 @@ func TestRedisStoreAddGetUpdateDelete(t *testing.T) {
 	s := NewRedisStore(client)
 
 	job := tests.NewJob("job-1", "python", "pending")
-	s.Add(job)
+	s.Add(context.Background(), job)
 
-	stored, ok := s.Get(job.ID)
+	stored, ok := s.Get(context.Background(), job.ID)
 	if !ok {
 		t.Fatalf("expected job in store")
 	}
@@ -24,15 +25,15 @@ func TestRedisStoreAddGetUpdateDelete(t *testing.T) {
 	}
 
 	job.Status = "completed"
-	s.Update(job)
+	s.Update(context.Background(), job)
 
-	stored, ok = s.Get(job.ID)
+	stored, ok = s.Get(context.Background(), job.ID)
 	if !ok || stored.Status != "completed" {
 		t.Fatalf("expected updated job, got ok=%v status=%v", ok, stored.Status)
 	}
 
-	s.Delete(job.ID)
-	if _, ok := s.Get(job.ID); ok {
+	s.Delete(context.Background(), job.ID)
+	if _, ok := s.Get(context.Background(), job.ID); ok {
 		t.Fatalf("expected deleted job to be missing")
 	}
 }
@@ -42,7 +43,7 @@ func TestRedisStoreGetInvalidPayload(t *testing.T) {
 	s := NewRedisStore(client)
 
 	tests.MustSetRaw(t, client, "job:bad", "{not-json")
-	if _, ok := s.Get("bad"); ok {
+	if _, ok := s.Get(context.Background(), "bad"); ok {
 		t.Fatalf("expected invalid payload lookup to fail")
 	}
 }
@@ -58,22 +59,22 @@ func TestRedisStoreCleanup(t *testing.T) {
 		{ID: "running", Status: "running", CreatedAt: now.Add(-2 * time.Hour)},
 	}
 	for _, j := range jobs {
-		s.Add(j)
+		s.Add(context.Background(), j)
 	}
 	tests.MustSetRaw(t, client, "job:invalid", "{invalid")
 
-	removed := s.Cleanup(30 * time.Minute)
+	removed := s.Cleanup(context.Background(), 30*time.Minute)
 	if removed != 1 {
 		t.Fatalf("expected 1 cleanup removal, got %d", removed)
 	}
 
-	if _, ok := s.Get("old-done"); ok {
+	if _, ok := s.Get(context.Background(), "old-done"); ok {
 		t.Fatalf("expected old completed job to be removed")
 	}
-	if _, ok := s.Get("new-done"); !ok {
+	if _, ok := s.Get(context.Background(), "new-done"); !ok {
 		t.Fatalf("expected recently completed job to remain")
 	}
-	if _, ok := s.Get("running"); !ok {
+	if _, ok := s.Get(context.Background(), "running"); !ok {
 		t.Fatalf("expected running job to remain")
 	}
 }

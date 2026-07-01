@@ -39,7 +39,10 @@ func (m *RedisManager) Allow(key string) bool {
 		1800,
 	).Int()
 	if err != nil {
-		logutil.Error("redis rate limiter script failed: key=%s error=%v", redisKey, err)
+		logutil.Error(ctx, "rate limiter script failed",
+			"key", redisKey,
+			"error", err,
+		)
 		return false
 	}
 

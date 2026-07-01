@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"log/slog"
 	"time"
 
 	"github.com/Dharshan2208/judex/internal/app"
@@ -9,7 +11,7 @@ import (
 )
 
 func main() {
-	logutil.Init("WORKER")
+	logutil.Init("worker", slog.LevelInfo)
 
 	application := app.NewWorker()
 
@@ -17,6 +19,6 @@ func main() {
 	application.Queue.StartRecovery(application.Store, 5*time.Minute)
 	application.Pool.Start()
 
-	logutil.Info("worker service running(with warm pool)")
+	logutil.Info(context.Background(), "worker service running (with warm pool)")
 	select {}
 }

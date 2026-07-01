@@ -30,11 +30,11 @@ func TestWorkerProcessSuccess(t *testing.T) {
 
 	w := NewWorker(1, q, s, stats, pm)
 	job := tests.NewJob("job-success", "python", "pending")
-	s.Add(job)
+	s.Add(context.Background(), job)
 
 	w.Process(job)
 
-	got, ok := s.Get(job.ID)
+	got, ok := s.Get(context.Background(), job.ID)
 	if !ok {
 		t.Fatalf("job missing after process")
 	}
@@ -64,11 +64,11 @@ func TestWorkerProcessUnsupportedLanguage(t *testing.T) {
 
 	w := NewWorker(1, q, s, stats, pm)
 	job := tests.NewJob("job-unsupported", "rust", "pending")
-	s.Add(job)
+	s.Add(context.Background(), job)
 
 	w.Process(job)
 
-	got, _ := s.Get(job.ID)
+	got, _ := s.Get(context.Background(), job.ID)
 	if got.Status != "internal_error" {
 		t.Fatalf("expected internal_error due acquire failure, got %s", got.Status)
 	}

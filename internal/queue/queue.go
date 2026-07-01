@@ -11,7 +11,6 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// const queueName = "jobs:queue"
 const (
 	pendingJobsQueue    = "pending_jobs"
 	processingJobsQueue = "processing_jobs"
@@ -32,7 +31,9 @@ type Queue struct {
 }
 
 func NewQueue(client *redis.Client, size int64) *Queue {
-	logutil.Info("creating job queue: size=%d", size)
+	logutil.Info(context.Background(), "creating job queue",
+		"size", size,
+	)
 
 	return &Queue{
 		Client:   client,
@@ -42,38 +43,59 @@ func NewQueue(client *redis.Client, size int64) *Queue {
 	}
 }
 
-func (q *Queue) TryPush(job *models.Job) bool {
-	ctx := context.Background()
-
+// TryPush attempts to push a job onto the pending queue.
+// Returns false if the queue is at capacity.
+func (q *Queue) TryPush(ctx context.Context, job *models.Job) bool {
 	pendingLen, err := q.Client.LLen(ctx, q.Pending).Result()
 	if err != nil {
-		logutil.Error("queue pending length failed: job_id=%s error=%v", job.ID, err)
+		logutil.Error(ctx, "queue: failed to get pending length",
+			"job_id", job.ID,
+			"error", err,
+		)
 		return false
 	}
 
 	processingLen, err := q.Client.LLen(ctx, q.Running).Result()
 	if err != nil {
-		logutil.Error("queue processing length failed: job_id=%s error=%v", job.ID, err)
+		logutil.Error(ctx, "queue: failed to get processing length",
+			"job_id", job.ID,
+			"error", err,
+		)
 		return false
 	}
 
-	if pendingLen+processingLen >= q.Capacity {
-		logutil.Warn("queue full: rejected job_id=%s length=%d capacity=%d", job.ID, pendingLen+processingLen, q.Capacity)
+	total := pendingLen + processingLen
+	if total >= q.Capacity {
+		logutil.Warn(ctx, "queue: full, rejecting job",
+			"job_id", job.ID,
+			"current_length", total,
+			"capacity", q.Capacity,
+		)
 		return false
 	}
 
 	data, err := json.Marshal(job)
 	if err != nil {
-		logutil.Error("queue marshal failed: job_id=%s error=%v", job.ID, err)
+		logutil.Error(ctx, "queue: marshal failed",
+			"job_id", job.ID,
+			"error", err,
+		)
 		return false
 	}
 
 	if err := q.Client.LPush(ctx, q.Pending, data).Err(); err != nil {
-		logutil.Error("queue push failed: job_id=%s error=%v", job.ID, err)
+		logutil.Error(ctx, "queue: push failed",
+			"job_id", job.ID,
+			"error", err,
+		)
 		return false
 	}
 
-	logutil.Info("job pushed to queue: job_id=%s status=%s language=%s", job.ID, job.Status, job.Language)
+	logutil.Info(ctx, "queue: job pushed",
+		"job_id", job.ID,
+		"status", job.Status,
+		"language", job.Language,
+	)
 	return true
 }
 
@@ -84,22 +106,32 @@ func (q *Queue) Claim() *ClaimedJob {
 		raw, err := q.Client.BLMove(ctx, q.Pending, q.Running, "RIGHT", "LEFT", 0*time.Second).Result()
 		if err != nil {
 			if err == context.Canceled || err == context.DeadlineExceeded {
-				logutil.Debug("queue claim cancelled: error=%v", err)
+				logutil.Debug(ctx, "queue: claim cancelled",
+					"error", err,
+				)
 				return nil
 			}
-			logutil.Error("queue claim failed: error=%v", err)
-			time.Sleep(time.Second) // Addding sleep to avoid tight looping on repeated errors
+			logutil.Error(ctx, "queue: claim failed",
+				"error", err,
+			)
+			time.Sleep(time.Second)
 			continue
 		}
 
 		var job models.Job
 		if err := json.Unmarshal([]byte(raw), &job); err != nil {
-			logutil.Error("queue unmarshal failed for raw job data: raw_data_len=%d error=%v", len(raw), err)
+			logutil.Error(ctx, "queue: unmarshal failed on claimed job",
+				"raw_data_len", len(raw),
+				"error", err,
+			)
 			q.Client.LRem(ctx, q.Running, 1, raw)
 			continue
 		}
 
-		logutil.Info("job claimed from queue: job_id=%s language=%s", job.ID, job.Language)
+		logutil.Info(ctx, "queue: job claimed",
+			"job_id", job.ID,
+			"language", job.Language,
+		)
 
 		return &ClaimedJob{
 			Job: &job,
@@ -113,21 +145,31 @@ func (q *Queue) Ack(raw string) {
 
 	removed, err := q.Client.LRem(ctx, q.Running, 1, raw).Result()
 	if err != nil {
-		logutil.Error("queue ack failed: error=%v", err)
+		logutil.Error(ctx, "queue: ack failed",
+			"error", err,
+		)
 		return
 	}
 
 	if removed == 0 {
-		logutil.Warn("queue ack warning: job was not found in processing queue for raw data: %s", raw)
+		logutil.Warn(ctx, "queue: ack warning — job not in processing queue",
+			"raw_data_len", len(raw),
+		)
 	} else {
-		logutil.Debug("job acknowledged: raw_data_len=%d removed=%d", len(raw), removed)
+		logutil.Debug(ctx, "queue: job acknowledged",
+			"raw_data_len", len(raw),
+			"removed", removed,
+		)
 	}
 }
 
-func (q *Queue) Len() int64 {
-	length, err := q.Client.LLen(context.Background(), q.Pending).Result()
+// Len returns the number of jobs in the pending queue.
+func (q *Queue) Len(ctx context.Context) int64 {
+	length, err := q.Client.LLen(ctx, q.Pending).Result()
 	if err != nil {
-		logutil.Error("queue pending length failed: error=%v", err)
+		logutil.Error(ctx, "queue: failed to get pending length",
+			"error", err,
+		)
 		return 0
 	}
 	return length
@@ -140,14 +182,21 @@ func (q *Queue) Cap() int64 {
 func (q *Queue) ProcessingLen() int64 {
 	length, err := q.Client.LLen(context.Background(), q.Running).Result()
 	if err != nil {
-		logutil.Error("queue processing length failed: error=%v", err)
+		logutil.Error(context.Background(), "queue: failed to get processing length",
+			"error", err,
+		)
 		return 0
 	}
 	return length
 }
 
+// StartRecovery launches a background goroutine that periodically checks for
+// stuck jobs (in processing for longer than timeout) and re-queues them.
 func (q *Queue) StartRecovery(s *store.RedisStore, timeout time.Duration) {
-	logutil.Info("queue recovery started: timeout=%s interval=%s", timeout, time.Minute)
+	logutil.Info(context.Background(), "queue: starting recovery",
+		"timeout", timeout,
+		"interval", time.Minute,
+	)
 
 	go func() {
 		ticker := time.NewTicker(time.Minute)
@@ -161,11 +210,15 @@ func (q *Queue) StartRecovery(s *store.RedisStore, timeout time.Duration) {
 
 func (q *Queue) recoverStuck(s *store.RedisStore, timeout time.Duration) {
 	ctx := context.Background()
-	logutil.Debug("running queue stuck job recovery: timeout=%s", timeout)
+	logutil.Debug(ctx, "queue: running stuck job recovery",
+		"timeout", timeout,
+	)
 
 	items, err := q.Client.LRange(ctx, q.Running, 0, -1).Result()
 	if err != nil {
-		logutil.Error("queue recovery scan failed: error=%v", err)
+		logutil.Error(ctx, "queue: recovery scan failed",
+			"error", err,
+		)
 		return
 	}
 
@@ -175,51 +228,75 @@ func (q *Queue) recoverStuck(s *store.RedisStore, timeout time.Duration) {
 		var queuedJob models.Job
 
 		if err := json.Unmarshal([]byte(raw), &queuedJob); err != nil {
-			logutil.Error("queue recovery unmarshal failed for raw job data: raw_data_len=%d error=%v", len(raw), err)
-			// Attempt to remove the malformed raw job from the processing queue to prevent infinite unmarshal errors
+			logutil.Error(ctx, "queue: recovery unmarshal failed",
+				"raw_data_len", len(raw),
+				"error", err,
+			)
 			q.Client.LRem(ctx, q.Running, 1, raw)
 			continue
 		}
 
-		storedJob, exists := s.Get(queuedJob.ID)
+		storedJob, exists := s.Get(ctx, queuedJob.ID)
 		if !exists {
-			logutil.Warn("queue recovery: job not found in store, removing from processing queue: job_id=%s", queuedJob.ID)
+			logutil.Warn(ctx, "queue: recovery — job not in store, removing",
+				"job_id", queuedJob.ID,
+			)
 			q.Client.LRem(ctx, q.Running, 1, raw)
 			continue
 		}
 
 		if storedJob.Status != "running" {
-			logutil.Debug("queue recovery: job not in running status, skipping: job_id=%s current_status=%s", storedJob.ID, storedJob.Status)
+			logutil.Debug(ctx, "queue: recovery — job not running, skipping",
+				"job_id", storedJob.ID,
+				"current_status", storedJob.Status,
+			)
 			continue
 		}
 
 		if now.Sub(storedJob.ClaimedAt) < timeout {
-			logutil.Debug("queue recovery: job not yet timed out, skipping: job_id=%s claimed_at=%v timeout=%v", storedJob.ID, storedJob.ClaimedAt, timeout)
+			logutil.Debug(ctx, "queue: recovery — job not yet timed out, skipping",
+				"job_id", storedJob.ID,
+				"claimed_at", storedJob.ClaimedAt,
+				"timeout", timeout,
+			)
 			continue
 		}
 
 		storedJob.Status = "pending"
 		storedJob.ClaimedAt = time.Time{}
-		s.Update(storedJob)
+		s.Update(ctx, storedJob)
 
-		logutil.Warn("recovered stuck job: job_id=%s status_before_requeue=%s", storedJob.ID, storedJob.Status)
+		logutil.Warn(ctx, "queue: recovered stuck job",
+			"job_id", storedJob.ID,
+			"status_before", "running",
+		)
 
 		removed, err := q.Client.LRem(ctx, q.Running, 1, raw).Result()
 		if err != nil {
-			logutil.Error("queue recovery remove failed from processing queue: job_id=%s error=%v", queuedJob.ID, err)
+			logutil.Error(ctx, "queue: recovery remove from processing failed",
+				"job_id", queuedJob.ID,
+				"error", err,
+			)
 			continue
 		}
 
 		if removed == 0 {
-			logutil.Warn("queue recovery: failed to remove job from processing queue (already gone?): job_id=%s", queuedJob.ID)
+			logutil.Warn(ctx, "queue: recovery — job already gone from processing",
+				"job_id", queuedJob.ID,
+			)
 			continue
 		}
 
 		if err := q.Client.LPush(ctx, q.Pending, raw).Err(); err != nil {
-			logutil.Error("queue recovery requeue failed to pending queue: job_id=%s error=%v", queuedJob.ID, err)
+			logutil.Error(ctx, "queue: recovery requeue failed",
+				"job_id", queuedJob.ID,
+				"error", err,
+			)
 			continue
 		}
 
-		logutil.Info("recovered and requeued stuck job: job_id=%s", queuedJob.ID)
+		logutil.Info(ctx, "queue: recovered and requeued stuck job",
+			"job_id", queuedJob.ID,
+		)
 	}
 }

@@ -1,48 +1,61 @@
 package logutil
 
 import (
-	"log"
+	"context"
+	"log/slog"
 	"os"
-	"sync"
 )
 
-var (
-	infoLogger  *log.Logger
-	warnLogger  *log.Logger
-	errorLogger *log.Logger
-	debugLogger *log.Logger
-	once        sync.Once
+type ctxKey string
+
+const (
+	requestIDKey ctxKey = "request_id"
 )
 
-// this to iniatialise the loggers with consistent flags and prefix
-func Init(role string) {
-	once.Do(func() {
-		flags := log.LstdFlags | log.Lmicroseconds | log.Lshortfile
-		prefix := "[" + role + "]"
-
-		infoLogger = log.New(os.Stdout, prefix+"INFO: ", flags)
-		warnLogger = log.New(os.Stderr, prefix+"WARN: ", flags)
-		errorLogger = log.New(os.Stderr, prefix+"ERROR: ", flags)
-		debugLogger = log.New(os.Stdout, prefix+"DEBUG: ", flags)
+func Init(service string, level slog.Level) {
+	handler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: level,
 	})
+	logger := slog.New(handler).With("service", service)
+	slog.SetDefault(logger)
 }
 
-func Info(format string, v ...any) {
-	infoLogger.Printf(format, v...)
+func WithRequestID(ctx context.Context, requestID string) context.Context {
+	return context.WithValue(ctx, requestIDKey, requestID)
 }
 
-func Warn(format string, v ...any) {
-	warnLogger.Printf(format, v...)
+func GetRequestID(ctx context.Context) string {
+	if id, ok := ctx.Value(requestIDKey).(string); ok {
+		return id
+	}
+	return ""
 }
 
-func Error(format string, v ...any) {
-	errorLogger.Printf(format, v...)
+func logger(ctx context.Context) *slog.Logger {
+	l := slog.Default()
+	if reqID := GetRequestID(ctx); reqID != "" {
+		l = l.With("request_id", reqID)
+	}
+	return l
 }
 
-func Debug(format string, v ...any) {
-	debugLogger.Printf(format, v...)
+func Debug(ctx context.Context, msg string, args ...any) {
+	logger(ctx).Debug(msg, args...)
 }
 
-func Fatal(format string, v ...any) {
-	errorLogger.Fatalf(format, v...)
+func Info(ctx context.Context, msg string, args ...any) {
+	logger(ctx).Info(msg, args...)
+}
+
+func Warn(ctx context.Context, msg string, args ...any) {
+	logger(ctx).Warn(msg, args...)
+}
+
+func Error(ctx context.Context, msg string, args ...any) {
+	logger(ctx).Error(msg, args...)
+}
+
+func Fatal(ctx context.Context, msg string, args ...any) {
+	logger(ctx).Error(msg, args...)
+	os.Exit(1)
 }

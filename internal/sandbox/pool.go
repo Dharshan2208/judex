@@ -24,7 +24,10 @@ type PoolManager struct {
 }
 
 func NewPoolManager(capacity int, languages map[string]string) (*PoolManager, error) {
-	logutil.Info("initializing container pool manager with capacity=%d", capacity)
+	ctx := context.Background()
+	logutil.Info(ctx, "initializing container pool manager",
+		"capacity", capacity,
+	)
 
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
@@ -37,32 +40,41 @@ func NewPoolManager(capacity int, languages map[string]string) (*PoolManager, er
 		capacity: capacity,
 	}
 
-	// Initialize warm pools for each language
 	for lang, image := range languages {
-		logutil.Info("initializing warm container pool for language=%s image=%s count=%d", lang, image, capacity)
+		logutil.Info(ctx, "initializing warm pool",
+			"language", lang,
+			"image", image,
+			"count", capacity,
+		)
 		pm.pools[lang] = make(chan *WarmContainer, capacity)
 		for range capacity {
-			c, err := pm.createWarmContainer(context.Background(), lang, image)
+			c, err := pm.createWarmContainer(ctx, lang, image)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create warm container for %s: %w", lang, err)
 			}
-			logutil.Debug("created warm container: container_id=%s language=%s image=%s", c.ID, lang, image)
+			logutil.Debug(ctx, "warm container created",
+				"container_id", c.ID,
+				"language", lang,
+				"image", image,
+			)
 			pm.pools[lang] <- c
 		}
 	}
-	logutil.Info("container pool manager initialized successfully")
+	logutil.Info(ctx, "container pool manager initialized")
 
 	return pm, nil
 }
 
 func (pm *PoolManager) createWarmContainer(ctx context.Context, lang, image string) (*WarmContainer, error) {
-	logutil.Debug("creating warm container: language=%s image=%s", lang, image)
+	logutil.Debug(ctx, "creating warm container",
+		"language", lang,
+		"image", image,
+	)
 
 	config := &container.Config{
-		Image: image,
-		// keeping the containers alvie
-		Cmd: []string{"tail", "-f", "/dev/null"},
-		// for non root user so 1000
+		Image:      image,
+		Cmd:        []string{"tail", "-f", "/dev/null"},
+		User:       "1000",
 		WorkingDir: "/workspace",
 		Tty:        false,
 	}
@@ -80,62 +92,99 @@ func (pm *PoolManager) createWarmContainer(ctx context.Context, lang, image stri
 
 	resp, err := pm.cli.ContainerCreate(ctx, config, hostConfig, nil, nil, "")
 	if err != nil {
-		logutil.Error("failed to create docker container: language=%s image=%s error=%v", lang, image, err)
+		logutil.Error(ctx, "container create failed",
+			"language", lang,
+			"image", image,
+			"error", err,
+		)
 		return nil, err
 	}
 
 	if err := pm.cli.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
-		logutil.Error("failed to start docker container: container_id=%s language=%s image=%s error=%v", resp.ID, lang, image, err)
+		logutil.Error(ctx, "container start failed",
+			"container_id", resp.ID,
+			"language", lang,
+			"image", image,
+			"error", err,
+		)
 		return nil, err
 	}
 
-	logutil.Debug("docker container started: container_id=%s language=%s image=%s", resp.ID, lang, image)
+	logutil.Debug(ctx, "container started",
+		"container_id", resp.ID,
+		"language", lang,
+		"image", image,
+	)
 
 	return &WarmContainer{ID: resp.ID, Language: lang, Image: image}, nil
 }
 
 func (pm *PoolManager) Acquire(ctx context.Context, lang string) (*WarmContainer, error) {
-	logutil.Debug("attempting to acquire container: language=%s", lang)
+	logutil.Debug(ctx, "attempting to acquire container",
+		"language", lang,
+	)
+
+	pm.mu.RLock()
 	pool, ok := pm.pools[lang]
+	pm.mu.RUnlock()
 
 	if !ok {
-		logutil.Warn("unsupported language for container acquisition: language=%s", lang)
+		logutil.Warn(ctx, "unsupported language for container acquisition",
+			"language", lang,
+		)
 		return nil, fmt.Errorf("unsupported language %s", lang)
 	}
 
 	select {
 	case container := <-pool:
-		// todo
-		logutil.Debug("container acquired from pool: container_id=%s language=%s", container.ID, lang)
-		// check if container healthy via sdk
+		logutil.Debug(ctx, "container acquired from pool",
+			"container_id", container.ID,
+			"language", lang,
+		)
 		return container, nil
 
 	case <-ctx.Done():
-		logutil.Warn("container acquisition cancelled or timed out: language=%s error=%v", lang, ctx.Err())
+		logutil.Warn(ctx, "container acquisition cancelled or timed out",
+			"language", lang,
+			"error", ctx.Err(),
+		)
 		return nil, ctx.Err()
-
 	}
 }
 
 func (pm *PoolManager) Release(ctx context.Context, container *WarmContainer) {
-	logutil.Debug("attempting to release container: container_id=%s language=%s", container.ID, container.Language)
+	logutil.Debug(ctx, "releasing container",
+		"container_id", container.ID,
+		"language", container.Language,
+	)
+
 	if err := pm.Sanitize(ctx, container); err != nil {
-		// if fails then just kiiling it and replacing it
-		logutil.Warn("sanitization failed for container: container_id=%s language=%s error=%v, replacing it", container.ID, container.Language, err)
+		logutil.Warn(ctx, "sanitization failed, replacing container",
+			"container_id", container.ID,
+			"language", container.Language,
+			"error", err,
+		)
 		pm.replaceContainer(ctx, container)
 		return
 	}
 
-	logutil.Debug("container sanitized: container_id=%s language=%s", container.ID, container.Language)
+	logutil.Debug(ctx, "container sanitized",
+		"container_id", container.ID,
+		"language", container.Language,
+	)
 	pm.pools[container.Language] <- container
-	logutil.Debug("container returned to pool: container_id=%s language=%s", container.ID, container.Language)
+	logutil.Debug(ctx, "container returned to pool",
+		"container_id", container.ID,
+		"language", container.Language,
+	)
 }
 
 func (pm *PoolManager) Sanitize(ctx context.Context, c *WarmContainer) error {
-	// killing all user processes and also wiping workspace
-	// running this as root to kill evything user started
+	logutil.Debug(ctx, "sanitizing container",
+		"container_id", c.ID,
+		"language", c.Language,
+	)
 
-	logutil.Debug("sanitizing container: container_id=%s language=%s", c.ID, c.Language)
 	execConfig := container.ExecOptions{
 		User: "root",
 		Cmd:  []string{"sh", "-c", "pkill -u 1000 || true; rm -rf /workspace/* /tmp/*"},
@@ -143,36 +192,58 @@ func (pm *PoolManager) Sanitize(ctx context.Context, c *WarmContainer) error {
 
 	exec, err := pm.cli.ContainerExecCreate(ctx, c.ID, execConfig)
 	if err != nil {
-		logutil.Error("failed to create exec config for sanitization: container_id=%s language=%s error=%v", c.ID, c.Language, err)
+		logutil.Error(ctx, "failed to create sanitization exec",
+			"container_id", c.ID,
+			"language", c.Language,
+			"error", err,
+		)
 		return err
 	}
 
 	err = pm.cli.ContainerExecStart(ctx, exec.ID, container.ExecStartOptions{})
 	if err != nil {
-		logutil.Error("failed to start exec for sanitization: container_id=%s language=%s error=%v", c.ID, c.Language, err)
+		logutil.Error(ctx, "failed to start sanitization exec",
+			"container_id", c.ID,
+			"language", c.Language,
+			"error", err,
+		)
 	}
 	return err
 }
 
 func (pm *PoolManager) replaceContainer(ctx context.Context, c *WarmContainer) {
-	logutil.Warn("replacing container: old_container_id=%s language=%s", c.ID, c.Language)
+	logutil.Warn(ctx, "replacing container",
+		"old_container_id", c.ID,
+		"language", c.Language,
+	)
 
-	// Logging for Docker operations during replacement
-	logutil.Debug("killing old container: container_id=%s", c.ID)
+	logutil.Debug(ctx, "killing old container",
+		"container_id", c.ID,
+	)
 	pm.cli.ContainerKill(ctx, c.ID, "SIGKILL")
 
-	logutil.Debug("removing old container: container_id=%s", c.ID)
+	logutil.Debug(ctx, "removing old container",
+		"container_id", c.ID,
+	)
 	pm.cli.ContainerRemove(ctx, c.ID, container.RemoveOptions{Force: true})
-	logutil.Info("old container removed: container_id=%s", c.ID)
+	logutil.Info(ctx, "old container removed",
+		"container_id", c.ID,
+	)
 
 	newC, err := pm.createWarmContainer(ctx, c.Language, c.Image)
 	if err != nil {
-		logutil.Error("CRITICAL: failed to replace container: language=%s error=%v", c.Language, err)
+		logutil.Error(ctx, "failed to replace container",
+			"language", c.Language,
+			"error", err,
+		)
 		return
 	}
 
 	pm.pools[c.Language] <- newC
-	logutil.Info("new container added to pool: container_id=%s language=%s", newC.ID, newC.Language)
+	logutil.Info(ctx, "new container added to pool",
+		"container_id", newC.ID,
+		"language", newC.Language,
+	)
 }
 
 func ptrInt64(i int64) *int64 { return &i }

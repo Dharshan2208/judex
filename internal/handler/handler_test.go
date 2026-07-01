@@ -2,6 +2,7 @@ package handler
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -73,12 +74,12 @@ func TestSubmitHandler(t *testing.T) {
 func TestResultHandlerAndHealth(t *testing.T) {
 	application := testApp(t, 10)
 	job := tests.NewJob("job-1", "go", "completed")
-	application.Store.Add(job)
+	application.Store.Add(context.Background(), job)
 	application.Stats.IncSubmitted()
 	application.Stats.IncCompleted()
 
 	t.Run("result_not_found", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/result/missing", nil)
+		req := httptest.NewRequest(http.MethodGet, "/judex/result/missing", nil)
 		rec := httptest.NewRecorder()
 		ResultHandler(application).ServeHTTP(rec, req)
 		if rec.Code != http.StatusNotFound {
@@ -87,7 +88,7 @@ func TestResultHandlerAndHealth(t *testing.T) {
 	})
 
 	t.Run("result_found", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/result/job-1", nil)
+		req := httptest.NewRequest(http.MethodGet, "/judex/result/job-1", nil)
 		rec := httptest.NewRecorder()
 		ResultHandler(application).ServeHTTP(rec, req)
 		if rec.Code != http.StatusOK {

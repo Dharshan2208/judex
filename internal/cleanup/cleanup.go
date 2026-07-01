@@ -1,6 +1,7 @@
 package cleanup
 
 import (
+	"context"
 	"time"
 
 	"github.com/Dharshan2208/judex/internal/logutil"
@@ -8,17 +9,25 @@ import (
 )
 
 func Start(s *store.RedisStore, ttl time.Duration) {
-	logutil.Info("cleanup started: ttl=%s interval=%s", ttl, time.Minute)
+	ctx := context.Background()
+	logutil.Info(ctx, "cleanup started",
+		"ttl", ttl,
+		"interval", time.Minute,
+	)
 
 	go func() {
 		for {
 			time.Sleep(time.Minute)
-			removed := s.Cleanup(ttl)
+			removed := s.Cleanup(ctx, ttl)
 
 			if removed > 0 {
-				logutil.Info("cleanup completed: removed_jobs=%d", removed)
+				logutil.Info(ctx, "cleanup completed",
+					"removed_jobs", removed,
+				)
 			} else {
-				logutil.Debug("cleanup ran, no jobs removed. ttl=%s", ttl)
+				logutil.Debug(ctx, "cleanup ran, no jobs removed",
+					"ttl", ttl,
+				)
 			}
 		}
 	}()

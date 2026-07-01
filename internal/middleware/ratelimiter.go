@@ -13,7 +13,11 @@ func RateLimit(limiter *limiter.RedisManager) func(http.Handler) http.Handler {
 			ip := getClientIP(r)
 
 			if !limiter.Allow(ip) {
-				logutil.Warn("rate limit exceeded: client_ip=%s path=%s method=%s", ip, r.URL.Path, r.Method)
+				logutil.Warn(r.Context(), "rate limit exceeded",
+					"client_ip", ip,
+					"path",      r.URL.Path,
+					"method",    r.Method,
+				)
 				http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
 				return
 			}

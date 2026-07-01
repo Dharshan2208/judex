@@ -15,10 +15,10 @@ func TestTryPushCapacity(t *testing.T) {
 	_, client := tests.NewMiniRedisClient(t)
 	q := NewQueue(client, 1)
 
-	if ok := q.TryPush(tests.NewJob("j1", "go", "pending")); !ok {
+	if ok := q.TryPush(context.Background(), tests.NewJob("j1", "go", "pending")); !ok {
 		t.Fatalf("expected first push to succeed")
 	}
-	if ok := q.TryPush(tests.NewJob("j2", "go", "pending")); ok {
+	if ok := q.TryPush(context.Background(), tests.NewJob("j2", "go", "pending")); ok {
 		t.Fatalf("expected second push to be rejected")
 	}
 }
@@ -27,8 +27,8 @@ func TestClaimAckFIFO(t *testing.T) {
 	_, client := tests.NewMiniRedisClient(t)
 	q := NewQueue(client, 10)
 
-	_ = q.TryPush(tests.NewJob("first", "python", "pending"))
-	_ = q.TryPush(tests.NewJob("second", "python", "pending"))
+	_ = q.TryPush(context.Background(), tests.NewJob("first", "python", "pending"))
+	_ = q.TryPush(context.Background(), tests.NewJob("second", "python", "pending"))
 
 	claimed1 := q.Claim()
 	claimed2 := q.Claim()
@@ -73,7 +73,7 @@ func TestRecoverStuckRequeuesTimedOutRunningJob(t *testing.T) {
 		CreatedAt: time.Now().Add(-10 * time.Minute),
 		ClaimedAt: time.Now().Add(-10 * time.Minute),
 	}
-	s.Add(job)
+	s.Add(context.Background(), job)
 
 	raw, err := json.Marshal(job)
 	if err != nil {
@@ -85,14 +85,14 @@ func TestRecoverStuckRequeuesTimedOutRunningJob(t *testing.T) {
 
 	q.recoverStuck(s, 2*time.Minute)
 
-	if got := q.Len(); got != 1 {
+	if got := q.Len(context.Background()); got != 1 {
 		t.Fatalf("expected requeued pending job, got pending=%d", got)
 	}
 	if got := q.ProcessingLen(); got != 0 {
 		t.Fatalf("expected running queue empty, got %d", got)
 	}
 
-	updated, ok := s.Get(job.ID)
+	updated, ok := s.Get(context.Background(), job.ID)
 	if !ok {
 		t.Fatalf("expected job to remain in store")
 	}

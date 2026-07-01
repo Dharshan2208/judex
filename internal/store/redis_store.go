@@ -27,118 +27,173 @@ func jobKey(id string) string {
 	return "job:" + id
 }
 
-func (s *RedisStore) Add(job *models.Job) {
+func (s *RedisStore) Add(ctx context.Context, job *models.Job) {
 	data, err := json.Marshal(job)
 	if err != nil {
-		logutil.Error("Redis store add marshal failed: job_id=%s error=%v", job.ID, err)
+		logutil.Error(ctx, "store: marshal failed",
+			"job_id", job.ID,
+			"error", err,
+		)
 		return
 	}
 
-	ctx := context.Background()
 	err = s.Client.Set(ctx, jobKey(job.ID), data, jobTTL).Err()
 	if err != nil {
-		logutil.Error("redis store add failed: job_id=%s error=%v", job.ID, err)
+		logutil.Error(ctx, "store: add failed",
+			"job_id", job.ID,
+			"error", err,
+		)
 		return
 	}
 
-	logutil.Info("redis store add: job_id=%s status=%s language=%s", job.ID, job.Status, job.Language)
+	logutil.Info(ctx, "store: job added",
+		"job_id", job.ID,
+		"status", job.Status,
+		"language", job.Language,
+	)
 }
 
-func (s *RedisStore) Get(id string) (*models.Job, bool) {
-	ctx := context.Background()
+func (s *RedisStore) Get(ctx context.Context, id string) (*models.Job, bool) {
 	data, err := s.Client.Get(ctx, jobKey(id)).Result()
 	if err == redis.Nil {
-		logutil.Debug("redis store get: job_id=%s found=false", id)
+		logutil.Debug(ctx, "store: job not found",
+			"job_id", id,
+		)
 		return nil, false
 	}
 
 	if err != nil {
-		logutil.Error("redis store get failed: job_id=%s error=%v", id, err)
+		logutil.Error(ctx, "store: get failed",
+			"job_id", id,
+			"error", err,
+		)
 		return nil, false
 	}
 
 	var job models.Job
 	if err := json.Unmarshal([]byte(data), &job); err != nil {
-		logutil.Error("redis store get unmarshal failed: job_id=%s error=%v raw_data_len=%d", id, err, len(data))
+		logutil.Error(ctx, "store: unmarshal failed",
+			"job_id", id,
+			"error", err,
+			"raw_data_len", len(data),
+		)
 		return nil, false
 	}
 
-	logutil.Debug("redis store get: job_id=%s status=%s found=true", id, job.Status)
+	logutil.Debug(ctx, "store: job found",
+		"job_id", job.ID,
+		"status", job.Status,
+	)
 	return &job, true
 }
 
-func (s *RedisStore) Update(job *models.Job) {
+func (s *RedisStore) Update(ctx context.Context, job *models.Job) {
 	data, err := json.Marshal(job)
 	if err != nil {
-		logutil.Error("redis store update marshal failed: job_id=%s error=%v", job.ID, err)
+		logutil.Error(ctx, "store: update marshal failed",
+			"job_id", job.ID,
+			"error", err,
+		)
 		return
 	}
 
-	ctx := context.Background()
 	err = s.Client.Set(ctx, jobKey(job.ID), data, jobTTL).Err()
 	if err != nil {
-		logutil.Error("redis store update failed: job_id=%s error=%v", job.ID, err)
+		logutil.Error(ctx, "store: update failed",
+			"job_id", job.ID,
+			"error", err,
+		)
 		return
 	}
 
-	logutil.Info("redis store update: job_id=%s status=%s language=%s", job.ID, job.Status, job.Language)
+	logutil.Info(ctx, "store: job updated",
+		"job_id", job.ID,
+		"status", job.Status,
+		"language", job.Language,
+	)
 }
 
-func (s *RedisStore) Delete(id string) {
-	ctx := context.Background()
+func (s *RedisStore) Delete(ctx context.Context, id string) {
 	err := s.Client.Del(ctx, jobKey(id)).Err()
 	if err != nil {
-		logutil.Error("redis store delete failed: job_id=%s error=%v", id, err)
+		logutil.Error(ctx, "store: delete failed",
+			"job_id", id,
+			"error", err,
+		)
 		return
 	}
 
-	logutil.Info("redis store delete: job_id=%s", id)
+	logutil.Info(ctx, "store: job deleted",
+		"job_id", id,
+	)
 }
 
-func (s *RedisStore) Cleanup(ttl time.Duration) int {
-	ctx := context.Background()
+func (s *RedisStore) Cleanup(ctx context.Context, ttl time.Duration) int {
 	iter := s.Client.Scan(ctx, 0, "job:*", 100).Iterator()
 
 	removed := 0
 	now := time.Now()
-	logutil.Debug("running redis store cleanup: ttl=%v", ttl)
+	logutil.Debug(ctx, "store: running cleanup",
+		"ttl", ttl,
+	)
 
 	for iter.Next(ctx) {
 		key := iter.Val()
 
 		data, err := s.Client.Get(ctx, key).Result()
 		if err != nil {
-			logutil.Error("redis store cleanup: failed to get job data for key=%s error=%v", key, err)
+			logutil.Error(ctx, "store: cleanup get failed",
+				"key", key,
+				"error", err,
+			)
 			continue
 		}
 
 		var job models.Job
 		if err := json.Unmarshal([]byte(data), &job); err != nil {
-			logutil.Error("redis store cleanup: unmarshal failed for key=%s error=%v raw_data_len=%d", key, err, len(data))
+			logutil.Error(ctx, "store: cleanup unmarshal failed",
+				"key", key,
+				"error", err,
+				"raw_data_len", len(data),
+			)
 			continue
 		}
 
 		if job.CompletedAt.IsZero() {
-			logutil.Debug("redis store cleanup: job not completed, skipping: job_id=%s", job.ID)
+			logutil.Debug(ctx, "store: cleanup skipping incomplete job",
+				"job_id", job.ID,
+			)
 			continue
 		}
 
 		if now.Sub(job.CompletedAt) > ttl {
 			if err := s.Client.Del(ctx, key).Err(); err == nil {
 				removed++
-				logutil.Info("redis store cleanup: removed expired job: job_id=%s", job.ID)
+				logutil.Info(ctx, "store: cleanup removed expired job",
+					"job_id", job.ID,
+				)
 			} else {
-				logutil.Error("redis store cleanup: failed to delete expired job: job_id=%s error=%v", job.ID, err)
+				logutil.Error(ctx, "store: cleanup delete failed",
+					"job_id", job.ID,
+					"error", err,
+				)
 			}
 		} else {
-			logutil.Debug("redis store cleanup: job not expired, skipping: job_id=%s completed_at=%v", job.ID, job.CompletedAt)
+			logutil.Debug(ctx, "store: cleanup skipping unexpired job",
+				"job_id", job.ID,
+				"completed_at", job.CompletedAt,
+			)
 		}
 	}
 
 	if err := iter.Err(); err != nil {
-		logutil.Error("redis cleanup scan failed: error=%v", err)
+		logutil.Error(ctx, "store: cleanup scan failed",
+			"error", err,
+		)
 	}
-	logutil.Info("redis store cleanup completed: removed_jobs=%d", removed)
+	logutil.Info(ctx, "store: cleanup completed",
+		"removed_jobs", removed,
+	)
 
 	return removed
 }

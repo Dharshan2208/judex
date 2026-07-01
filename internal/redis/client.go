@@ -12,8 +12,10 @@ import (
 var Ctx = context.Background()
 
 func New() *goredis.Client {
+	ctx := context.Background()
+
 	if err := godotenv.Load(); err != nil {
-		logutil.Info("No .env file found, using system environment variables")
+		logutil.Info(ctx, "no .env file found, using system environment variables")
 	}
 
 	addr := os.Getenv("REDIS_ADDR")
@@ -26,10 +28,14 @@ func New() *goredis.Client {
 	})
 
 	if err := client.Ping(Ctx).Err(); err != nil {
-		logutil.Fatal("Failed to connect to Redis: %v", err)
+		logutil.Fatal(ctx, "failed to connect to Redis",
+			"error", err,
+		)
 	}
 
-	logutil.Info("Connected to Redis at %s", addr)
+	logutil.Info(ctx, "connected to Redis",
+		"addr", addr,
+	)
 
 	return client
 }
