@@ -1,60 +1,85 @@
 # Judex
 
-> A distributed, multi-language code execution engine with Docker based sandbox isolation. Inspired by platforms like LeetCode, HackerRank, and Codeforces.
+[![Go](https://img.shields.io/badge/Go-1.25-00ADD8?logo=go&logoColor=white)](https://go.dev/)
+[![Redis](https://img.shields.io/badge/Redis-7-D82C20?logo=redis&logoColor=white)](https://redis.io/)
+[![Docker](https://img.shields.io/badge/Docker-required-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
+[![Prometheus](https://img.shields.io/badge/Metrics-Prometheus-E6522C?logo=prometheus&logoColor=white)](https://prometheus.io/)
+[![Grafana](https://img.shields.io/badge/Dashboards-Grafana-F46800?logo=grafana&logoColor=white)](https://grafana.com/)
+
+Judex is a small distributed code execution backend for online judge style systems. It accepts source code over HTTP, queues submissions in Redis, and executes them asynchronously inside restricted Docker sandboxes for Python, C, C++, Go, and Java.
+
+The project is useful as a reference implementation for building the backend pieces behind coding platforms: API submission, queueing, worker pools, container isolation, rate limiting, structured logs, metrics, and local observability.
+
+> **Security note**
+> Judex is designed as a learning and development project, not a hardened multi-tenant sandbox. Review the Docker isolation model, host Docker socket exposure, resource limits, and operational controls before running untrusted code in production.
+
+## Table of Contents
+
+- [Features](#features)
+- [Architecture](#architecture)
+- [Project Structure](#project-structure)
+- [Prerequisites](#prerequisites)
+- [Quick Start](#quick-start)
+- [Configuration](#configuration)
+- [API Reference](#api-reference)
+- [Docker Setup](#docker-setup)
+- [Observability](#observability)
+- [Development](#development)
+- [Testing](#testing)
+
+## Features
+
+- Asynchronous submission flow with a Redis-backed pending and processing queue.
+- API and worker services that can be scaled independently.
+- Warm Docker container pools per language to avoid creating a fresh container for every job.
+- Redis-backed distributed token bucket rate limiting for submission requests.
+- Per-job result storage in Redis with JSON status records.
+- Stuck job recovery for jobs left in the processing queue.
+- Completed job cleanup in the worker process.
+- Prometheus metrics for HTTP and execution timings.
+- Docker Compose stack for Redis, API, worker, Prometheus, Grafana, Loki, and Promtail.
 
 ## Architecture
 
 ```mermaid
-flowchart TD
+flowchart LR
     Client["Client / Frontend"]
-
-    RateLimiter["Token Bucket Rate Limiter<br/>(Redis backed)"]
-
-    API["API Server :8080"]
-    Worker["Worker Service<br/>4 goroutines"]
-
-    Redis[("Redis<br/>Queue + Store + Token Buckets")]
-
+    API["API service<br/>:8080"]
+    RateLimit["Redis token bucket<br/>10 burst, 1 token/sec"]
+    Redis[("Redis<br/>job store + queues")]
+    Worker["Worker service<br/>4 goroutines<br/>metrics :8081"]
     Docker["Docker Engine"]
+    Metrics["Prometheus<br/>:9090"]
+    Logs["Loki + Promtail<br/>:3100"]
+    Grafana["Grafana<br/>:3000"]
 
-    subgraph Sandbox["Sandbox Containers"]
-        Python["judex-python"]
-        C["judex-c"]
-        CPP["judex-cpp"]
-        Go["judex-go"]
-        Java["judex-java"]
-    end
-
-    Client -->|"POST /judex/run"| RateLimiter
-    RateLimiter -->|"Token available"| API
-    RateLimiter -.->|"429 Too Many Requests"| Client
-
+    Client -->|"POST /judex/run"| API
     Client -->|"GET /judex/result/{id}"| API
-    Client -->|"GET /judex/health"| API
+    Client -->|"GET /health"| API
 
-    RateLimiter <-->|"Read / Update bucket"| Redis
+    API --> RateLimit
+    RateLimit <--> Redis
+    API -->|"enqueue job"| Redis
 
-    API -->|"Enqueue job"| Redis
+    Worker -->|"BLMOVE pending -> processing"| Redis
+    Worker -->|"update result"| Redis
+    Worker --> Docker
 
-    Worker -->|"Blocking claim"| Redis
-    Worker -->|"Store execution result"| Redis
+    Docker --> Python["judex-python"]
+    Docker --> C["judex-c"]
+    Docker --> CPP["judex-cpp"]
+    Docker --> Go["judex-go"]
+    Docker --> Java["judex-java"]
 
-    Worker -->|"docker run<br/>256 MB · 1 CPU · no network"| Docker
-
-    Docker --> Python
-    Docker --> C
-    Docker --> CPP
-    Docker --> Go
-    Docker --> Java
+    Metrics --> API
+    Metrics --> Worker
+    Logs --> API
+    Logs --> Worker
+    Grafana --> Metrics
+    Grafana --> Logs
 ```
 
-## Overview
-
-This is a small but production oriented **online judge execution backend**. It accepts source code via HTTP requests, queues each submission in Redis, and processes them asynchronously using worker services. Each job is picked up from the queue and executed inside a short lived, heavily restricted Docker container with strict CPU, memory, filesystem, process, and network limitations to ensure isolation and security.
-
-This project is intended for learning how real world coding platforms and internal code execution systems are built with concepts like distributed job queues, sandboxing, containerized execution, concurrency, and rate limited request handling in a scalable architecture.
-
-## How It Works
+### Execution Flow
 
 ```mermaid
 sequenceDiagram
@@ -62,72 +87,95 @@ sequenceDiagram
     participant API
     participant Redis
     participant Worker
-    participant Docker
+    participant Sandbox as Warm sandbox container
 
-    Client->>API: POST /judex/run { language, code }
+    Client->>API: POST /judex/run
+    API->>Redis: EVAL token bucket script
 
-    Note over API: Rate limit check (Redis token bucket)
-    API->>Redis: EVAL rate_limit_lua
-    Redis-->>API: allowed / denied
-
-    alt Rate limited
-        API-->>Client: 429 Too Many Requests
-    else Accepted
-        API->>Redis: SET job:{id} status=pending TTL 24h
+    alt rate limited
+        API-->>Client: 429 Rate limit exceeded
+    else accepted
+        API->>Redis: SET job:{id} status=pending
         API->>Redis: LPUSH pending_jobs
-        API-->>Client: 200 { job_id, status: "pending" }
+        API-->>Client: 200 { job_id, status }
     end
 
-    Note over Worker: BLMOVE blocks until a job arrives
-    Worker->>Redis: BLMOVE pending_jobs → processing_jobs
+    Worker->>Redis: BLMOVE pending_jobs -> processing_jobs
     Worker->>Redis: SET job:{id} status=running
-
-    Worker->>Worker: Create temp workspace + write source file
-    Worker->>Docker: docker run (256mb, 1cpu, no-net, read-only)
-
-    Docker->>Worker: stdout, stderr, exit code, timeout
-    Worker->>Redis: SET job:{id} result + final status
-    Worker->>Redis: LREM processing_jobs 1 <raw>
+    Worker->>Sandbox: upload source file
+    Worker->>Sandbox: compile and/or run command
+    Sandbox-->>Worker: stdout, stderr, status
+    Worker->>Redis: SET job:{id} final result
+    Worker->>Redis: LREM processing_jobs
 
     Client->>API: GET /judex/result/{job_id}
     API->>Redis: GET job:{id}
-    API-->>Client: 200 { status, stdout, stderr, ... }
+    API-->>Client: job status and result
 ```
 
-## Key Features
+### Sandbox Model
 
-| Feature | Details |
-|---|---|
-| **HTTP API** | Submit code to `/judex/run`, poll results from `/judex/result/{id}`, check heh at `/judex/health` |
-| **Async processing** | Jobs are queued in Redis and processed by a pool of background workers |
-| **Redis backed queue** | FIFO ordering via `LPUSH` / blocking `BLMOVE` with atomic claim semantics |
-| **Redis job store** | Full job state persisted as JSON with 24-hour TTL |
-| **Redis rate limiter** | Distributed token bucket (10 burst, 1/sec refill) via Lua script — survives restarts and scales across instances |
-| **Docker sandbox** | Each execution runs in a fresh container with 256 MB RAM, 1 CPU, no network, read-only rootfs, no capabilities, and `no-new-privileges` |
-| **Multi-language** | Python, C, C++, Go, and Java |
-| **Stuck job recovery** | Periodic scan requeues jobs claimed for >5 minutes |
-| **Completed job cleanup** | Background goroutine deletes finished job records older than 15 minutes |
-| **Horizontal scaling** | Stateless API; add more instances behind a load balancer. Rate limiter and queue are shared via Redis |
+The worker creates warm containers for every supported language during startup. Jobs borrow a container from the language pool, upload source into `/workspace`, execute the configured compile/run command, then sanitize the container before returning it to the pool.
 
-## Tech Stack
+Current sandbox settings:
 
-| Layer | Technology |
-|---|---|
-| Language | Go 1.25 |
-| HTTP | `net/http` (stdlib) |
-| Queue & Store | Redis 7 (via `go-redis/redis/v9`) |
-| Sandbox | Docker (sibling containers via `/var/run/docker.sock`) |
-| Deployment | Docker Compose |
+| Setting | Value |
+| --- | --- |
+| Container user | `1000` |
+| Memory limit | `256 MiB` |
+| CPU limit | `1 CPU` |
+| PID limit | `64` |
+| Network | disabled (`none`) |
+| Linux capabilities | dropped (`ALL`) |
+| Security option | `no-new-privileges` |
+| Per-job context timeout | `30s` |
 
-## Getting Started
+## Project Structure
 
-### Prerequisites
+```text
+.
+├── cmd/
+│   ├── api/                  # HTTP API entrypoint
+│   └── worker/               # worker service entrypoint
+├── docker/                   # sandbox images for each language
+│   ├── c/
+│   ├── cpp/
+│   ├── go/
+│   ├── java/
+│   └── python/
+├── internal/
+│   ├── app/                  # application wiring
+│   ├── cleanup/              # completed job cleanup
+│   ├── executor/             # language-specific compile/run logic
+│   ├── handler/              # HTTP handlers
+│   ├── limiter/              # Redis Lua token bucket
+│   ├── middleware/           # CORS, logging, metrics, request IDs
+│   ├── metrics/              # Prometheus collectors
+│   ├── queue/                # Redis queue and recovery logic
+│   ├── sandbox/              # Docker warm container pool
+│   ├── store/                # Redis job storage
+│   └── worker/               # worker pool and job processor
+├── tests/                    # shared test helpers
+├── docker-compose.yml        # local runtime and observability stack
+├── prometheus.yml            # Prometheus scrape config
+├── loki-config.yaml          # Loki config
+├── promtail-config.yaml      # Promtail Docker log discovery
+├── Dockerfile                # API/worker service image
+└── Makefile                  # common development commands
+```
+
+## Prerequisites
 
 - Go 1.25+
-- Docker (for sandbox execution)
-- Redis 7+ (or the Docker image)
+- Docker Engine with access to `/var/run/docker.sock`
+- Docker Compose v2
+- Redis 7+ if running services outside Compose
+- `make`
+- Optional: `golangci-lint` for `make lint`
 
-### Clone
+## Quick Start
+
+Clone the repository and install Go dependencies:
 
 ```bash
 git clone https://github.com/Dharshan2208/judex.git
@@ -135,78 +183,95 @@ cd judex
 go mod download
 ```
 
-### Build Sandbox Images
+Build the language sandbox images:
 
 ```bash
 make images
 ```
 
-### Start Redis
+Start Redis:
 
 ```bash
 docker run --rm --name judex-redis -p 6379:6379 redis:7-alpine
 ```
 
-
-## Configuration
-
-| Variable | Required | Default | Used by | Description |
-|---|---|---|---|---|
-| `REDIS_ADDR` | No | `localhost:6379` | API, Worker | Redis server address. Docker Compose sets this to `redis:6379` automatically |
-
-Create a `.env` file to override:
+Start the API and worker in separate terminals:
 
 ```bash
-REDIS_ADDR=my-redis-host:6379
+make run-api
 ```
 
-## Running Modes
-
-### Development (standalone binaries)
-
 ```bash
-# Terminal 1 — API
-make run-api
-
-# Terminal 2 — Worker
 make run-worker
 ```
 
-### Production (standalone binaries)
+Submit a Python job:
 
 ```bash
-go build -o bin/api ./cmd/api
-go build -o bin/worker ./cmd/worker
-
-REDIS_ADDR=localhost:6379 ./bin/api
-REDIS_ADDR=localhost:6379 ./bin/worker
+curl -sS -X POST http://localhost:8080/judex/run \
+  -H 'Content-Type: application/json' \
+  -d '{"language":"python","code":"print(\"hello from judex\")"}'
 ```
 
-### Docker Compose
+Poll the result:
 
 ```bash
-make up
+curl -sS http://localhost:8080/judex/result/<job_id>
 ```
 
-> The `docker-compose.yml` mounts `/app/temp:/app/temp` because the worker uses the host Docker engine through `/var/run/docker.sock`. Sandbox containers need to see the same workspace path.
+## Configuration
 
-## API Documentation
+Judex reads environment variables directly and also attempts to load a local `.env` file.
 
-### `POST /run`
+| Variable | Default | Used by | Description |
+| --- | --- | --- | --- |
+| `REDIS_ADDR` | `localhost:6379` | API, worker | Redis address. Compose sets this to `redis:6379`. |
 
-Submit a code execution job.
+Example `.env`:
 
-| Field | Value |
-|---|---|
-| Route | `/run` |
-| Content-Type | `application/json` |
+```env
+REDIS_ADDR=localhost:6379
+```
+
+The following values are currently hard-coded in the application:
+
+| Setting | Value | Location |
+| --- | --- | --- |
+| API port | `8080` | `cmd/api/main.go` |
+| Worker metrics port | `8081` | `cmd/worker/main.go` |
+| Worker count | `4` | `internal/app/app.go` |
+| Queue capacity | `1000` | `internal/app/app.go` |
+| Rate limit | burst `10`, refill `1/sec` | `cmd/api/main.go` |
+| Redis job TTL | `24h` | `internal/store/redis_store.go` |
+| Completed job cleanup age | `15m` | `cmd/worker/main.go` |
+| Stuck job recovery age | `5m` | `cmd/worker/main.go` |
+
+## API Reference
+
+### `POST /judex/run`
+
+Submit a source file for asynchronous execution.
+
+Request:
 
 ```json
 {
   "language": "python",
-  "code": "print(\"Hello from Python\")"
+  "code": "print(\"hello from judex\")"
 }
 ```
+
+Supported `language` values:
+
+| Language | Value | Source filename |
+| --- | --- | --- |
+| Python | `python` | `main.py` |
+| C | `c` | `main.c` |
+| C++ | `cpp` | `main.cpp` |
+| Go | `go` | `main.go` |
+| Java | `java` | `Main.java` |
+
+Response:
 
 ```json
 {
@@ -215,104 +280,210 @@ Submit a code execution job.
 }
 ```
 
+Possible errors:
+
+| Status | Reason |
+| --- | --- |
+| `400` | Invalid JSON body |
+| `405` | Method is not `POST` |
+| `429` | Rate limit exceeded or queue full |
+
 ### `GET /judex/result/{job_id}`
 
-Poll for job status and execution output.
+Fetch job state and execution output.
 
-| Field | Value |
-|---|---|
-| Route | `/judex/result/{job_id}` |
-| Status values | `pending`, `running`, `completed`, `failed`, `timeout`, `compile_error`, `runtime_error` |
+```bash
+curl -sS http://localhost:8080/judex/result/6d9b58ec-d381-4af4-a837-80aa3e13a8c9
+```
 
-**Completed Python job:**
+Example completed response:
 
 ```json
 {
   "id": "6d9b58ec-d381-4af4-a837-80aa3e13a8c9",
   "language": "python",
   "status": "completed",
-  "created_at": "2026-06-06T16:15:00.000000000Z",
-  "claimed_at": "2026-06-06T16:15:01.000000000Z",
-  "completed_at": "2026-06-06T16:15:01.120000000Z",
+  "created_at": "2026-07-05T12:00:00Z",
+  "claimed_at": "2026-07-05T12:00:01Z",
+  "completed_at": "2026-07-05T12:00:01Z",
   "result": {
-    "stdout": "Hello from Python\n",
+    "stdout": "hello from judex\n",
     "stderr": "",
     "status": "success",
     "language": "python",
-    "execution_time_ms": 120
+    "execution_time_ms": 42
   }
 }
 ```
 
-**C++ compile error:**
+Possible job statuses:
 
-```json
-{
-  "id": "f1f8f70e-e765-42cc-86f0-d2189b871029",
-  "language": "cpp",
-  "status": "compile_error",
-  "created_at": "2026-06-06T16:15:00.000000000Z",
-  "claimed_at": "2026-06-06T16:15:01.000000000Z",
-  "completed_at": "2026-06-06T16:15:01.090000000Z",
-  "result": {
-    "stdout": "",
-    "stderr": "main.cpp: error output from g++",
-    "status": "compile_error",
-    "language": "cpp",
-    "execution_time_ms": 0
-  }
-}
+| Status | Meaning |
+| --- | --- |
+| `pending` | Accepted and waiting in the queue |
+| `running` | Claimed by a worker |
+| `completed` | Execution finished successfully |
+| `compile_error` | Compilation failed for a compiled language |
+| `runtime_error` | Runtime execution failed |
+| `timeout` | Execution exceeded the active timeout path |
+| `internal_error` | Worker or sandbox setup failed |
+| `unsupported language` | No executor exists for the submitted language |
+
+Possible HTTP errors:
+
+| Status | Reason |
+| --- | --- |
+| `404` | Job ID was not found or has expired/been cleaned up |
+| `405` | Method is not `GET` |
+
+### `GET /health`
+
+Return API process health and queue counters.
+
+```bash
+curl -sS http://localhost:8080/health
 ```
-
-### `GET /judex/health`
-
-Service health and queue metrics.
-
-| Field | Value |
-|---|---|
-| Route | `/health` |
-| Success | `200 OK` |
 
 ```json
 {
   "status": "ok",
   "queue_length": 0,
-  "queue_capacity": 100,
-  "submitted_jobs": 3,
+  "queue_capacity": 1000,
+  "submitted_jobs": 1,
   "completed_jobs": 0,
   "failed_jobs": 0
 }
 ```
 
-## Rate Limiting
+### `GET /judex/metrics`
 
-The `/judex/run` endpoint is protected by a **distributed token bucket** implemented as a Redis Lua script:
+Expose Prometheus metrics.
 
-- **Capacity**: 10 tokens (burst of 10 requests)
-- **Refill rate**: 1 token per second (sustained throughput)
-- **Scope**: Per client IP
-- **Storage**: Redis Hash key `ratelimit:{ip}` with 30 minute TTL
-- **Atomicity**: The entire check-and-consume runs inside a single Lua script on Redis — safe across multiple API instances
+```bash
+curl -sS http://localhost:8080/judex/metrics
+curl -sS http://localhost:8081/judex/metrics
+```
 
-Because the state lives in Redis, rate limits survive API restarts and work correctly behind a load balancer with multiple API replicas.
+## Docker Setup
 
-## Sandbox Security
+Run the full local stack:
 
-Each execution runs in a Docker container with the following restrictions:
+```bash
+make up
+```
 
-| Constraint | Value |
-|---|---|
-| Memory | 256 MB (`--memory=256m`) |
-| CPU | 1 core (`--cpus=1`) |
-| Processes | 64 max (`--pids-limit=64`) |
-| Network | None (`--network=none`) |
-| Filesystem | Read-only root (`--read-only`) |
-| Temp | 64 MB tmpfs at `/tmp` |
-| Privileges | None (`--security-opt=no-new-privileges`) |
-| Capabilities | All dropped (`--cap-drop=ALL`) |
-| Timeout | 10 seconds (context deadline) |
+Stop it:
 
-## TODO
+```bash
+make down
+```
 
-- [ ] Deploy to a VPS
-- [ ] Build a frontend
+Compose starts:
+
+| Service | Port | Purpose |
+| --- | --- | --- |
+| `api` | `8080` | Judex HTTP API |
+| `worker` | `8081` | Worker Prometheus metrics |
+| `redis` | `6379` | Queue, job store, rate limiter |
+| `prometheus` | `9090` | Metrics scraping |
+| `grafana` | `3000` | Dashboards and log exploration |
+| `loki` | `3100` | Log storage |
+| `promtail` | `9080` internal | Docker log discovery and shipping |
+
+The worker mounts `/var/run/docker.sock` so it can create sibling sandbox containers on the host Docker engine. It also mounts `/app/temp:/app/temp`, although current code uploads source directly into warm containers through the Docker API.
+
+Before running only the worker outside Compose, build sandbox images locally:
+
+```bash
+make images
+```
+
+## Observability
+
+Prometheus scrapes:
+
+- API metrics from `api:8080/judex/metrics`
+- Worker metrics from `worker:8081/judex/metrics`
+
+Application metrics currently include:
+
+| Metric | Labels | Description |
+| --- | --- | --- |
+| `judex_request_duration_seconds` | `endpoint`, `status` | HTTP request latency |
+| `judex_execution_duration_seconds` | `language` | Total language execution latency |
+| `judex_compile_duration_seconds` | `language` | Compile step latency |
+| `judex_run_duration_seconds` | `language` | Run step latency |
+
+Promtail discovers Docker containers through the Docker socket and ships logs to Loki with labels such as `service`, `container_name`, and `compose_project`.
+
+Grafana is available at:
+
+```text
+http://localhost:3000
+```
+
+## Development
+
+Common commands:
+
+```bash
+make help
+make images
+make run-api
+make run-worker
+make test
+make vet
+make lint
+make clean
+```
+
+Build production binaries locally:
+
+```bash
+go build -o bin/api ./cmd/api
+go build -o bin/worker ./cmd/worker
+```
+
+Run them:
+
+```bash
+REDIS_ADDR=localhost:6379 ./bin/api
+```
+
+```bash
+REDIS_ADDR=localhost:6379 ./bin/worker
+```
+
+### Adding a Language
+
+1. Add a sandbox image under `docker/<language>/Dockerfile`.
+2. Add the image name to `IMAGES` in `Makefile`.
+3. Register the language-to-image mapping in `internal/app/app.go`.
+4. Implement an executor in `internal/executor/`.
+5. Add the language case in `Worker.getExecutor`.
+6. Add tests for executor behavior and handler/worker integration.
+7. Update this README's supported language table.
+
+## Testing
+
+Run the full Go test suite with race detection:
+
+```bash
+make test
+```
+
+Run `go vet`:
+
+```bash
+make vet
+```
+
+Run linting, if `golangci-lint` is installed:
+
+```bash
+make lint
+```
+
+The test suite uses helpers under `tests/`, including Redis test helpers and fake Docker behavior for sandbox-adjacent tests.
+
+
