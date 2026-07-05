@@ -1,3 +1,5 @@
+name: judex
+
 services:
   redis:
     image: redis:7-alpine
@@ -24,6 +26,39 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - /app/temp:/app/temp
+
+  loki:
+    image: grafana/loki:3.4.2
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./loki-config.yaml:/etc/loki/config.yaml
+      - loki-data:/loki
+    command: -config.file=/etc/loki/config.yaml
+
+  promtail:
+    image: grafana/promtail:3.4.2
+    volumes:
+      - ./promtail-config.yaml:/etc/promtail/config.yaml
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: -config.file=/etc/promtail/config.yaml
+    depends_on:
+      - loki
+
+  grafana:
+    image: grafana/grafana:11.5.2
+    ports:
+      - "3000:3000"
+    environment:
+      GF_INSTALL_PLUGINS: ""
+    volumes:
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - loki
+
+volumes:
+  loki-data:
+  grafana-data:
 
 # Here we are using the volumes bcoz the sandbox logic needs the access the host docker engine
 # ./temp is mounted to woker so now docker can also see the same files from the host side
