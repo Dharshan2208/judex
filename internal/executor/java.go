@@ -12,9 +12,9 @@ type JavaExecutor struct{}
 
 func (j JavaExecutor) Execute(ctx context.Context, sb *sandbox.Sandbox) Result {
 	start := time.Now()
-	defer metrics.ExecutionDuration.WithLabelValues("java").
-		Observe(time.Since(start).Seconds())
-
+	defer func() {
+		metrics.ExecutionDuration.WithLabelValues("java").Observe(time.Since(start).Seconds())
+	}()
 	compileStart := time.Now()
 	compileRes := sb.Execute(ctx,
 		[]string{

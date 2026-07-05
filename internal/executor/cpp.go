@@ -12,9 +12,9 @@ type CppExecutor struct{}
 
 func (c CppExecutor) Execute(ctx context.Context, sb *sandbox.Sandbox) Result {
 	start := time.Now()
-	defer metrics.ExecutionDuration.WithLabelValues("cpp").
-		Observe(time.Since(start).Seconds())
-
+	defer func() {
+		metrics.ExecutionDuration.WithLabelValues("cpp").Observe(time.Since(start).Seconds())
+	}()
 	compileStart := time.Now()
 	compileResult := sb.Execute(ctx,
 		[]string{

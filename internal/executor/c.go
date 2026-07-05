@@ -12,9 +12,9 @@ type CExecutor struct{}
 
 func (c CExecutor) Execute(ctx context.Context, sb *sandbox.Sandbox) Result {
 	start := time.Now()
-	defer metrics.ExecutionDuration.WithLabelValues("c").
-		Observe(time.Since(start).Seconds())
-
+	defer func() {
+		metrics.ExecutionDuration.WithLabelValues("c").Observe(time.Since(start).Seconds())
+	}()
 	compileStart := time.Now()
 	compileResult := sb.Execute(ctx,
 		[]string{
