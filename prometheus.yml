@@ -1,0 +1,12 @@
+scrape_configs:
+  - job_name: "judex-api"
+    scrape_interval: 5s
+    metrics_path: /judex/metrics
+    static_configs:
+      - targets: ["api:8080"]
+
+  - job_name: "judex-worker"
+    scrape_interval: 5s
+    metrics_path: /judex/metrics
+    static_configs:
+      - targets: ["worker:8081"]

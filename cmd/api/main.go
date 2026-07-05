@@ -10,6 +10,8 @@ import (
 	"github.com/Dharshan2208/judex/internal/limiter"
 	"github.com/Dharshan2208/judex/internal/logutil"
 	"github.com/Dharshan2208/judex/internal/middleware"
+
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func main() {
@@ -20,12 +22,16 @@ func main() {
 
 	mux := http.NewServeMux()
 
+	mux.Handle("/judex/metrics", promhttp.Handler())
+
 	mux.Handle("/judex/run",
 		middleware.RequestID(
 			middleware.Logging(
-				middleware.CORS(
-					middleware.RateLimit(ratelimiter)(
-						http.HandlerFunc(handler.SubmitHandler(application)),
+				middleware.PrometheusMetrics(
+					middleware.CORS(
+						middleware.RateLimit(ratelimiter)(
+							http.HandlerFunc(handler.SubmitHandler(application)),
+						),
 					),
 				),
 			),
@@ -35,8 +41,10 @@ func main() {
 	mux.Handle("/judex/result/",
 		middleware.RequestID(
 			middleware.Logging(
-				middleware.CORS(
-					http.HandlerFunc(handler.ResultHandler(application)),
+				middleware.PrometheusMetrics(
+					middleware.CORS(
+						http.HandlerFunc(handler.ResultHandler(application)),
+					),
 				),
 			),
 		),
@@ -45,8 +53,10 @@ func main() {
 	mux.Handle("/health",
 		middleware.RequestID(
 			middleware.Logging(
-				middleware.CORS(
-					http.HandlerFunc(handler.HealthHandler(application)),
+				middleware.PrometheusMetrics(
+					middleware.CORS(
+						http.HandlerFunc(handler.HealthHandler(application)),
+					),
 				),
 			),
 		),

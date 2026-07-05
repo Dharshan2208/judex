@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/Dharshan2208/judex/internal/metrics"
 	"github.com/Dharshan2208/judex/internal/sandbox"
 )
 
@@ -11,7 +12,10 @@ type GoExecutor struct{}
 
 func (g GoExecutor) Execute(ctx context.Context, sb *sandbox.Sandbox) Result {
 	start := time.Now()
+	defer metrics.ExecutionDuration.WithLabelValues("go").
+		Observe(time.Since(start).Seconds())
 
+	compileStart := time.Now()
 	compileRes := sb.Execute(ctx,
 		[]string{
 			"go",
@@ -21,6 +25,8 @@ func (g GoExecutor) Execute(ctx context.Context, sb *sandbox.Sandbox) Result {
 			"/workspace/main.go",
 		},
 	)
+	metrics.CompileDuration.WithLabelValues("go").
+		Observe(time.Since(compileStart).Seconds())
 
 	if compileRes.Status != "success" {
 		if compileRes.Stderr == "execution timeout" {
@@ -37,11 +43,14 @@ func (g GoExecutor) Execute(ctx context.Context, sb *sandbox.Sandbox) Result {
 		}
 	}
 
+	runStart := time.Now()
 	runRes := sb.Execute(ctx,
 		[]string{
 			"./app",
 		},
 	)
+	metrics.RunDuration.WithLabelValues("go").
+		Observe(time.Since(runStart).Seconds())
 
 	elapsed := time.Since(start)
 

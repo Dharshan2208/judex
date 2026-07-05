@@ -39,7 +39,7 @@ func newApp(role string, workerCount int) *App {
 	logutil.Info(ctx, "application initializing", "role", role)
 
 	redisClient := redisclient.New()
-	q := queue.NewQueue(redisClient, 100)
+	q := queue.NewQueue(redisClient, 1000)
 	s := store.NewRedisStore(redisClient)
 	stats := &queue.Stats{}
 
@@ -66,8 +66,8 @@ func newApp(role string, workerCount int) *App {
 	}
 
 	logutil.Info(ctx, "application initialized",
-		"role",         role,
-		"queue_size",   100,
+		"role", role,
+		"queue_size", 1000,
 		"worker_count", workerCount,
 	)
 

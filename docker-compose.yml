@@ -19,6 +19,8 @@ services:
   worker:
     build: .
     command: /bin/worker
+    ports:
+      - "8081:8081"
     environment:
       REDIS_ADDR: redis:6379
     depends_on:
@@ -55,6 +57,13 @@ services:
       - grafana-data:/var/lib/grafana
     depends_on:
       - loki
+
+  prometheus:
+    image: prom/prometheus:v3.2.1
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
 
 volumes:
   loki-data:

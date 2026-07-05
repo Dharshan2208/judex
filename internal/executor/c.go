@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/Dharshan2208/judex/internal/metrics"
 	"github.com/Dharshan2208/judex/internal/sandbox"
 )
 
@@ -11,7 +12,10 @@ type CExecutor struct{}
 
 func (c CExecutor) Execute(ctx context.Context, sb *sandbox.Sandbox) Result {
 	start := time.Now()
+	defer metrics.ExecutionDuration.WithLabelValues("c").
+		Observe(time.Since(start).Seconds())
 
+	compileStart := time.Now()
 	compileResult := sb.Execute(ctx,
 		[]string{
 			"gcc",
@@ -20,6 +24,8 @@ func (c CExecutor) Execute(ctx context.Context, sb *sandbox.Sandbox) Result {
 			"/workspace/app",
 		},
 	)
+	metrics.CompileDuration.WithLabelValues("c").
+		Observe(time.Since(compileStart).Seconds())
 
 	if compileResult.Status != "success" {
 		if compileResult.Stderr == "execution timeout" {
@@ -36,11 +42,14 @@ func (c CExecutor) Execute(ctx context.Context, sb *sandbox.Sandbox) Result {
 		}
 	}
 
+	runStart := time.Now()
 	runResult := sb.Execute(ctx,
 		[]string{
 			"/workspace/app",
 		},
 	)
+	metrics.RunDuration.WithLabelValues("c").
+		Observe(time.Since(runStart).Seconds())
 
 	elapsed := time.Since(start)
 

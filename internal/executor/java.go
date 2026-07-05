@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/Dharshan2208/judex/internal/metrics"
 	"github.com/Dharshan2208/judex/internal/sandbox"
 )
 
@@ -11,13 +12,18 @@ type JavaExecutor struct{}
 
 func (j JavaExecutor) Execute(ctx context.Context, sb *sandbox.Sandbox) Result {
 	start := time.Now()
+	defer metrics.ExecutionDuration.WithLabelValues("java").
+		Observe(time.Since(start).Seconds())
 
+	compileStart := time.Now()
 	compileRes := sb.Execute(ctx,
 		[]string{
 			"javac",
 			"/workspace/Main.java",
 		},
 	)
+	metrics.CompileDuration.WithLabelValues("java").
+		Observe(time.Since(compileStart).Seconds())
 
 	if compileRes.Status != "success" {
 		return Result{
@@ -27,6 +33,7 @@ func (j JavaExecutor) Execute(ctx context.Context, sb *sandbox.Sandbox) Result {
 		}
 	}
 
+	runStart := time.Now()
 	runRes := sb.Execute(ctx,
 		[]string{
 			"java",
@@ -35,6 +42,8 @@ func (j JavaExecutor) Execute(ctx context.Context, sb *sandbox.Sandbox) Result {
 			"Main",
 		},
 	)
+	metrics.RunDuration.WithLabelValues("java").
+		Observe(time.Since(runStart).Seconds())
 
 	elapsed := time.Since(start)
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/Dharshan2208/judex/internal/metrics"
 	"github.com/Dharshan2208/judex/internal/sandbox"
 )
 
@@ -11,6 +12,10 @@ type CppExecutor struct{}
 
 func (c CppExecutor) Execute(ctx context.Context, sb *sandbox.Sandbox) Result {
 	start := time.Now()
+	defer metrics.ExecutionDuration.WithLabelValues("cpp").
+		Observe(time.Since(start).Seconds())
+
+	compileStart := time.Now()
 	compileResult := sb.Execute(ctx,
 		[]string{
 			"g++",
@@ -19,6 +24,8 @@ func (c CppExecutor) Execute(ctx context.Context, sb *sandbox.Sandbox) Result {
 			"app",
 		},
 	)
+	metrics.CompileDuration.WithLabelValues("cpp").
+		Observe(time.Since(compileStart).Seconds())
 
 	if compileResult.Status != "success" {
 		if compileResult.Stderr == "execution timeout" {
@@ -35,11 +42,14 @@ func (c CppExecutor) Execute(ctx context.Context, sb *sandbox.Sandbox) Result {
 		}
 	}
 
+	runStart := time.Now()
 	runResult := sb.Execute(ctx,
 		[]string{
 			"/workspace/app",
 		},
 	)
+	metrics.RunDuration.WithLabelValues("cpp").
+		Observe(time.Since(runStart).Seconds())
 
 	elapsed := time.Since(start)
 	if runResult.Error != nil {
