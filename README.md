@@ -486,4 +486,8 @@ make lint
 
 The test suite uses helpers under `tests/`, including Redis test helpers and fake Docker behavior for sandbox-adjacent tests.
 
+## License
+
+This project is licensed under the AGPL-3.0 License. See [LICENSE](LICENSE) for details.
+
 
