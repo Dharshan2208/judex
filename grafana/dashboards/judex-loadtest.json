@@ -1,0 +1,256 @@
+{
+  "uid": "judex-loadtest",
+  "title": "Judex Loadtest",
+  "tags": ["judex", "loadtest"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5s",
+  "time": { "from": "now-15m", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "endpoint",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+        "query": "label_values(judex_request_duration_seconds_bucket, endpoint)",
+        "current": { "selected": true, "text": "/judex/run", "value": "/judex/run" },
+        "includeAll": false
+      },
+      {
+        "name": "language",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+        "query": "label_values(judex_execution_duration_seconds_bucket, language)",
+        "current": { "selected": true, "text": "All", "value": "$__all" },
+        "includeAll": true,
+        "multi": true
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "RPS (all endpoints)",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        { "refId": "A", "expr": "sum(rate(judex_http_requests_total[$__rate_interval]))", "legendFormat": "req/s" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "p95 /judex/run",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(judex_request_duration_seconds_bucket{endpoint=\"/judex/run\"}[$__rate_interval])))",
+          "legendFormat": "p95"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Error % (4xx+5xx)",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * sum(rate(judex_http_requests_total{status=~\"4..|5..\"}[$__rate_interval])) / clamp_min(sum(rate(judex_http_requests_total[$__rate_interval])), 0.001)",
+          "legendFormat": "error %"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percent" }, "overrides": [] }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Queue pending",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "refId": "A", "expr": "max(judex_queue_pending)", "legendFormat": "pending" }]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "API latency p50 / p95 / p99 — $endpoint",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        {
+          "refId": "p50",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(judex_request_duration_seconds_bucket{endpoint=\"$endpoint\"}[$__rate_interval])))",
+          "legendFormat": "p50"
+        },
+        {
+          "refId": "p95",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(judex_request_duration_seconds_bucket{endpoint=\"$endpoint\"}[$__rate_interval])))",
+          "legendFormat": "p95"
+        },
+        {
+          "refId": "p99",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(judex_request_duration_seconds_bucket{endpoint=\"$endpoint\"}[$__rate_interval])))",
+          "legendFormat": "p99"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "RPS + errors by status",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (status) (rate(judex_http_requests_total{endpoint=\"$endpoint\"}[$__rate_interval]))",
+          "legendFormat": "{{status}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Execution latency p50 / p95 / p99 by language",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        {
+          "refId": "p50",
+          "expr": "histogram_quantile(0.50, sum by (le, language) (rate(judex_execution_duration_seconds_bucket{language=~\"$language\"}[$__rate_interval])))",
+          "legendFormat": "p50 {{language}}"
+        },
+        {
+          "refId": "p95",
+          "expr": "histogram_quantile(0.95, sum by (le, language) (rate(judex_execution_duration_seconds_bucket{language=~\"$language\"}[$__rate_interval])))",
+          "legendFormat": "p95 {{language}}"
+        },
+        {
+          "refId": "p99",
+          "expr": "histogram_quantile(0.99, sum by (le, language) (rate(judex_execution_duration_seconds_bucket{language=~\"$language\"}[$__rate_interval])))",
+          "legendFormat": "p99 {{language}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Compile vs Run p95 by language",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        {
+          "refId": "compile",
+          "expr": "histogram_quantile(0.95, sum by (le, language) (rate(judex_compile_duration_seconds_bucket{language=~\"$language\"}[$__rate_interval])))",
+          "legendFormat": "compile {{language}}"
+        },
+        {
+          "refId": "run",
+          "expr": "histogram_quantile(0.95, sum by (le, language) (rate(judex_run_duration_seconds_bucket{language=~\"$language\"}[$__rate_interval])))",
+          "legendFormat": "run {{language}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Jobs: submitted vs finished",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        {
+          "refId": "submitted",
+          "expr": "sum by (language) (rate(judex_jobs_submitted_total[$__rate_interval]))",
+          "legendFormat": "submitted {{language}}"
+        },
+        {
+          "refId": "finished",
+          "expr": "sum by (status) (rate(judex_jobs_finished_total[$__rate_interval]))",
+          "legendFormat": "finished {{status}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] }
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Queue depth + worker in-flight",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        { "refId": "pending", "expr": "max(judex_queue_pending)", "legendFormat": "pending" },
+        { "refId": "processing", "expr": "max(judex_queue_processing)", "legendFormat": "processing" },
+        { "refId": "inflight", "expr": "sum(judex_worker_jobs_in_flight)", "legendFormat": "in-flight" }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Queue wait p50 / p95 / p99",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        {
+          "refId": "p50",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(judex_queue_wait_seconds_bucket[$__rate_interval])))",
+          "legendFormat": "p50 wait"
+        },
+        {
+          "refId": "p95",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(judex_queue_wait_seconds_bucket[$__rate_interval])))",
+          "legendFormat": "p95 wait"
+        },
+        {
+          "refId": "p99",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(judex_queue_wait_seconds_bucket[$__rate_interval])))",
+          "legendFormat": "p99 wait"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] }
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Backpressure: rate-limited + queue-full",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        {
+          "refId": "ratelimited",
+          "expr": "sum(rate(judex_rate_limited_total[$__rate_interval]))",
+          "legendFormat": "rate-limited/s"
+        },
+        {
+          "refId": "queuefull",
+          "expr": "sum(rate(judex_queue_full_total[$__rate_interval]))",
+          "legendFormat": "queue-full/s"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] }
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Go runtime: goroutines + CPU + memory",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 36 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        { "refId": "goroutines", "expr": "sum(go_goroutines)", "legendFormat": "goroutines" },
+        { "refId": "memory", "expr": "sum(process_resident_memory_bytes)", "legendFormat": "rss bytes" },
+        { "refId": "cpu", "expr": "sum(rate(process_cpu_seconds_total[$__rate_interval]))", "legendFormat": "cpu cores" }
+      ]
+    }
+  ]
+}

@@ -17,6 +17,7 @@ func main() {
 
 	application := app.NewWorker()
 
+	application.Queue.StartMetricsExporter(5 * time.Second)
 	cleanup.Start(application.Store, 15*time.Minute)
 	application.Queue.StartRecovery(application.Store, 5*time.Minute)
 	application.Pool.Start()

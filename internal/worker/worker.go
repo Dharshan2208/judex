@@ -6,6 +6,7 @@ import (
 
 	"github.com/Dharshan2208/judex/internal/executor"
 	"github.com/Dharshan2208/judex/internal/logutil"
+	"github.com/Dharshan2208/judex/internal/metrics"
 	"github.com/Dharshan2208/judex/internal/models"
 	"github.com/Dharshan2208/judex/internal/queue"
 	"github.com/Dharshan2208/judex/internal/sandbox"
@@ -60,6 +61,14 @@ func (w *Worker) Start() {
 
 func (w *Worker) Process(job *models.Job) {
 	processingStartTime := time.Now()
+	metrics.WorkerJobsInFlight.Inc()
+	defer metrics.WorkerJobsInFlight.Dec()
+
+	// Time spent waiting for a worker. This is the number your
+	// load-test queue-wait panel reads. Clamp at 0 for clock skew.
+	if wait := time.Since(job.CreatedAt); wait >= 0 {
+		metrics.QueueWaitDuration.WithLabelValues(job.Language).Observe(wait.Seconds())
+	}
 
 	logutil.Info(context.Background(), "worker: job processing started",
 		"worker_id", w.ID,
@@ -168,6 +177,7 @@ func (w *Worker) Process(job *models.Job) {
 		job.Status = result.Status
 		w.Stats.IncFailed()
 	}
+	metrics.JobsFinishedTotal.WithLabelValues(job.Language, job.Status).Inc()
 
 	job.CompletedAt = time.Now()
 	w.Store.Update(ctx, job)
@@ -193,6 +203,7 @@ func (w *Worker) failJob(ctx context.Context, job *models.Job, status string) {
 	job.Status = status
 	w.Store.Update(ctx, job)
 	w.Stats.IncFailed()
+	metrics.JobsFinishedTotal.WithLabelValues(job.Language, status).Inc()
 }
 
 func (w *Worker) getExecutor(lang string) (string, executor.Executor) {

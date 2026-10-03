@@ -5,6 +5,7 @@ import (
 
 	"github.com/Dharshan2208/judex/internal/limiter"
 	"github.com/Dharshan2208/judex/internal/logutil"
+	"github.com/Dharshan2208/judex/internal/metrics"
 )
 
 func RateLimit(limiter *limiter.RedisManager) func(http.Handler) http.Handler {
@@ -18,6 +19,7 @@ func RateLimit(limiter *limiter.RedisManager) func(http.Handler) http.Handler {
 					"path", r.URL.Path,
 					"method", r.Method,
 				)
+				metrics.RateLimitedTotal.WithLabelValues("/judex/run").Inc()
 				http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
 				return
 			}

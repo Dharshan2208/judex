@@ -10,6 +10,7 @@ import (
 
 	"github.com/Dharshan2208/judex/internal/app"
 	"github.com/Dharshan2208/judex/internal/logutil"
+	"github.com/Dharshan2208/judex/internal/metrics"
 	"github.com/Dharshan2208/judex/internal/models"
 )
 
@@ -47,6 +48,7 @@ func SubmitHandler(application *app.App) http.HandlerFunc {
 
 		if ok := application.Queue.TryPush(ctx, job); !ok {
 			application.Store.Delete(ctx, job.ID)
+			metrics.QueueFullTotal.WithLabelValues(job.Language).Inc()
 			logutil.Warn(ctx, "submit: queue full, job rejected",
 				"job_id", job.ID,
 				"language", job.Language,
@@ -56,6 +58,7 @@ func SubmitHandler(application *app.App) http.HandlerFunc {
 		}
 
 		application.Stats.IncSubmitted()
+		metrics.JobsSubmittedTotal.WithLabelValues(job.Language).Inc()
 		logutil.Info(ctx, "job submitted",
 			"job_id", job.ID,
 			"language", job.Language,

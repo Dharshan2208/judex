@@ -10,3 +10,8 @@ scrape_configs:
     metrics_path: /judex/metrics
     static_configs:
       - targets: ["worker:8081"]
+
+  - job_name: "redis"
+    scrape_interval: 5s
+    static_configs:
+      - targets: ["redis-exporter:9121"]

@@ -13,6 +13,9 @@ services:
       - "8080:8080"
     environment:
       REDIS_ADDR: redis:6379
+      RATE_LIMIT_BURST: ${RATE_LIMIT_BURST:-10}
+      RATE_LIMIT_RPS: ${RATE_LIMIT_RPS:-1}
+      RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
     depends_on:
       - redis
 
@@ -52,11 +55,27 @@ services:
     ports:
       - "3000:3000"
     environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
       GF_INSTALL_PLUGINS: ""
     volumes:
       - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./grafana/dashboards:/etc/grafana/dashboards:ro
     depends_on:
       - loki
+      - prometheus
+
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.66.0-alpine
+    command: --redis.addr=redis://redis:6379
+    ports:
+      - "9121:9121"
+    depends_on:
+      - redis
 
   prometheus:
     image: prom/prometheus:v3.2.1

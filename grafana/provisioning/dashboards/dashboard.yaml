@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: judex
+    folder: Judex
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 10
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/dashboards
