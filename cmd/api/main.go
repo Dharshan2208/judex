@@ -7,7 +7,7 @@ import (
 
 	"github.com/Dharshan2208/judex/internal/app"
 	"github.com/Dharshan2208/judex/internal/handler"
-	"github.com/Dharshan2208/judex/internal/limiter"
+	// "github.com/Dharshan2208/judex/internal/limiter"
 	"github.com/Dharshan2208/judex/internal/logutil"
 	"github.com/Dharshan2208/judex/internal/middleware"
 
@@ -18,27 +18,27 @@ func main() {
 	logutil.Init("api", slog.LevelInfo)
 
 	application := app.NewAPI()
-	ratelimiter := limiter.NewRedisManager(application.Redis, 10, 1)
+	// ratelimiter := limiter.NewRedisManager(application.Redis, 10, 1)
 
 	mux := http.NewServeMux()
 
 	mux.Handle("/judex/metrics", promhttp.Handler())
 
-	mux.Handle("/judex/run",
+	mux.Handle(
+		"/judex/run",
 		middleware.RequestID(
 			middleware.Logging(
 				middleware.PrometheusMetrics(
 					middleware.CORS(
-						middleware.RateLimit(ratelimiter)(
-							http.HandlerFunc(handler.SubmitHandler(application)),
-						),
+						http.HandlerFunc(handler.SubmitHandler(application)),
 					),
 				),
 			),
 		),
 	)
 
-	mux.Handle("/judex/result/",
+	mux.Handle(
+		"/judex/result/",
 		middleware.RequestID(
 			middleware.Logging(
 				middleware.PrometheusMetrics(
@@ -50,7 +50,8 @@ func main() {
 		),
 	)
 
-	mux.Handle("/health",
+	mux.Handle(
+		"/health",
 		middleware.RequestID(
 			middleware.Logging(
 				middleware.PrometheusMetrics(
